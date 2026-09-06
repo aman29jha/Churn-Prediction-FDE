@@ -128,6 +128,34 @@ resource "aws_iam_role_policy" "karpenter_controller" {
         Effect   = "Allow"
         Action   = ["eks:DescribeCluster"]
         Resource = "*"
+      },
+      # Real bug found only by actually triggering medallion_pipeline_dag:
+      # the EC2NodeClass sat "Unknown"/never-ready from the moment it was
+      # created (this had NEVER worked, since before this session's Spark
+      # jobs were ever actually run) — Karpenter v1 self-manages the EC2
+      # instance profile it launches nodes under (rather than requiring a
+      # pre-created one), which needs these IAM actions; without them every
+      # reconcile failed with `AccessDenied ... iam:GetInstanceProfile`,
+      # which cascaded into "nodePool not ready" for both NodePools, which
+      # is why driver/executor pods sat Pending forever even after the
+      # Fargate/label fix correctly stopped Fargate from claiming them.
+      # ssm:GetParameter is separately required for `amiSelectorTerms:
+      # alias: al2023@latest` to resolve to a real AMI ID via SSM.
+      {
+        Sid    = "InstanceProfileManagement"
+        Effect = "Allow"
+        Action = [
+          "iam:CreateInstanceProfile", "iam:TagInstanceProfile",
+          "iam:AddRoleToInstanceProfile", "iam:RemoveRoleFromInstanceProfile",
+          "iam:DeleteInstanceProfile", "iam:GetInstanceProfile",
+        ]
+        Resource = "*"
+      },
+      {
+        Sid      = "AmiResolution"
+        Effect   = "Allow"
+        Action   = ["ssm:GetParameter"]
+        Resource = "*"
       }
     ]
   })
