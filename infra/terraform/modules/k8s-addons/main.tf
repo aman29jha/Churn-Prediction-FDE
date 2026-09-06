@@ -521,9 +521,23 @@ resource "kubernetes_role_binding" "airflow_spark_operator_access" {
     kind      = "Role"
     name      = kubernetes_role.airflow_spark_operator_access.metadata[0].name
   }
+  # Real bug found by actually triggering medallion_pipeline_dag for real
+  # (not via `airflow tasks test`, which runs inline as the scheduler
+  # process and so incorrectly appeared to work): KubernetesExecutor's
+  # actual task pods run under a SEPARATE ServiceAccount, "airflow-worker"
+  # — not "airflow-scheduler" — so granting only the latter left every
+  # real DAG run hitting its own fresh 403 Forbidden creating
+  # sparkapplications, indistinguishable from the earlier RBAC bug except
+  # for which ServiceAccount the error named. Both need this grant: the
+  # scheduler for direct CLI/test invocations, the worker for real runs.
   subject {
     kind      = "ServiceAccount"
     name      = "airflow-scheduler"
+    namespace = "churn-service"
+  }
+  subject {
+    kind      = "ServiceAccount"
+    name      = "airflow-worker"
     namespace = "churn-service"
   }
   depends_on = [helm_release.airflow]
