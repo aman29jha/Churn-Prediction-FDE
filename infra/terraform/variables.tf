@@ -64,7 +64,7 @@ variable "dags_git_repo" {
 }
 
 variable "image_tag" {
-  description = "Git-SHA-based tag for the 3 Docker images already pushed to ECR (see docs/architecture/08-infrastructure.md). Suffixed -amd64: the first push (sha-83887be) was built natively on Apple Silicon (arm64) and crashed on Fargate's amd64 nodes with 'exec format error' — rebuilt with `docker buildx build --platform linux/amd64` and pushed under this new tag (ECR is IMMUTABLE tag mutability, so the original tag couldn't be overwritten)."
+  description = "Git-SHA-based tag for the 3 Docker images already pushed to ECR (see docs/architecture/08-infrastructure.md). Suffixed -amd64: the first push (sha-83887be) was built natively on Apple Silicon (arm64) and crashed on Fargate's amd64 nodes with 'exec format error' — rebuilt with `docker buildx build --platform linux/amd64`. Bumped to sha-eef47d1-amd64: spark-jobs' Dockerfile was missing the hadoop-aws + aws-java-sdk-bundle jars needed for any s3a:// access (found via the Spark History Server crash-looping with ClassNotFoundException: S3AFileSystem) — this is the tag used by spark-jobs specifically; api-service/console still reference this same variable for a consistent per-commit deploy even though their source didn't change."
   type        = string
-  default     = "sha-83887be-amd64"
+  default     = "sha-eef47d1-amd64"
 }
