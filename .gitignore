@@ -6,10 +6,12 @@ __pycache__/
 *.tfstate
 *.tfstate.backup
 .terraform/
-.terraform.lock.hcl
+# .terraform.lock.hcl is intentionally NOT ignored — Terraform recommends
+# committing it for reproducible provider version resolution.
 *.egg-info/
 .ipynb_checkpoints/
 data/synthetic/
 data/local_bronze/
 models/
 .docker_scratch/
+*.zip

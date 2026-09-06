@@ -1,0 +1,63 @@
+variable "project" {
+  description = "Short name used to prefix all resources, keeping sandbox/official-account and multi-run naming collision-free."
+  type        = string
+  default     = "churn-fde"
+}
+
+variable "environment" {
+  description = "e.g. sandbox, official — appended to resource names/tags."
+  type        = string
+  default     = "sandbox"
+}
+
+variable "aws_region" {
+  description = "ap-south-1 for the personal sandbox; re-set per -var when applying to the official account."
+  type        = string
+  default     = "ap-south-1"
+}
+
+variable "vpc_cidr" {
+  type    = string
+  default = "10.42.0.0/16"
+}
+
+variable "availability_zone_count" {
+  description = "2 is enough for this exercise's data volume; keeps NAT/subnet cost down vs. 3."
+  type        = number
+  default     = 2
+}
+
+variable "eks_cluster_version" {
+  type    = string
+  default = "1.30"
+}
+
+variable "budget_alarm_email" {
+  description = "Where CloudWatch billing/error alarms are sent."
+  type        = string
+  default     = ""
+}
+
+variable "log_retention_days" {
+  description = "Explicit retention on every CloudWatch Log Group — defaults to never-expire otherwise, a real cost leak on a strict-budget account (see docs/architecture/05-observability.md)."
+  type        = number
+  default     = 14
+}
+
+variable "tags" {
+  type    = map(string)
+  default = {}
+}
+
+variable "airflow_api_token" {
+  description = "Bearer token the trigger Lambda uses to call Airflow's REST API. Generated post-deploy (Airflow API auth setup) and passed via -var or a tfvars file that's gitignored — never committed."
+  type        = string
+  sensitive   = true
+  default     = ""
+}
+
+variable "dags_git_repo" {
+  description = "Git repo Airflow's git-sync sidecar pulls airflow/dags/ from."
+  type        = string
+  default     = "https://github.com/aman29jha/Churn-Prediction-FDE.git"
+}
