@@ -8,7 +8,7 @@ metadata:
 spec:
   type: Python
   mode: cluster
-  image: "784004375291.dkr.ecr.ap-south-1.amazonaws.com/churn-fde-sandbox-spark-jobs:sha-eef47d1-amd64"
+  image: "784004375291.dkr.ecr.ap-south-1.amazonaws.com/churn-fde-sandbox-spark-jobs:sha-e696da2-amd64"
   imagePullPolicy: IfNotPresent
   mainApplicationFile: local:///app/scripts/spark_job_entrypoint.py
   arguments:
