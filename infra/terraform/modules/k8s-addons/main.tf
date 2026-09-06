@@ -107,7 +107,13 @@ resource "aws_iam_role_policy" "karpenter_controller" {
           "ec2:CreateLaunchTemplate", "ec2:CreateFleet", "ec2:RunInstances", "ec2:TerminateInstances",
           "ec2:DescribeLaunchTemplates", "ec2:DescribeInstances", "ec2:DescribeSubnets",
           "ec2:DescribeSecurityGroups", "ec2:DescribeInstanceTypes", "ec2:DescribeInstanceTypeOfferings",
-          "ec2:DescribeAvailabilityZones", "ec2:DeleteLaunchTemplate", "ec2:CreateTags"
+          "ec2:DescribeAvailabilityZones", "ec2:DeleteLaunchTemplate", "ec2:CreateTags",
+          # Found peeling back the previous IAM fix one layer at a time:
+          # once InstanceProfile access worked, EC2NodeClass got past that
+          # to AMI resolution — SSM parameter lookup succeeded, but the
+          # follow-up call to fetch that AMI's full details failed with
+          # its own separate AccessDenied.
+          "ec2:DescribeImages"
         ]
         Resource = "*"
       },
