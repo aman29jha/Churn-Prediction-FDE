@@ -33,7 +33,12 @@ digraph Orchestration {
       TRAIN_T [label="Training task\n(KubernetesPodOperator,\nplain Python/XGBoost, no Spark)", fillcolor="#fdebd0"];
     }
 
-    UI [label="Airflow UI\nDAG run history, retries,\nlogs", shape=box3d, fillcolor="#d5f5e3"];
+    subgraph cluster_dag4 {
+      label="live_simulator_dag (*/10 * * * *)"; style="rounded"; color="#aaaaaa";
+      SIM_T [label="Simulator task\n(KubernetesPodOperator)\npause/unpause via native\nAirflow DAG toggle", fillcolor="#e8daef"];
+    }
+
+    UI [label="Airflow UI\nDAG run history, retries,\nlogs, pause/unpause toggle\nper DAG", shape=box3d, fillcolor="#d5f5e3"];
   }
 
   COMPACT_SA [label="Compaction ScheduledSparkApplication\n(no Airflow involved —\nSpark Operator's own cron)", fillcolor="#f8c471"];
@@ -52,5 +57,6 @@ digraph Orchestration {
   SILVER_T -> UI [style=dotted];
   GOLD_T -> UI [style=dotted];
   TRAIN_T -> UI [style=dotted];
+  SIM_T -> UI [style=dotted];
   CRD_APP -> UI [style=dotted, label="kubectl get sparkapplications"];
 }

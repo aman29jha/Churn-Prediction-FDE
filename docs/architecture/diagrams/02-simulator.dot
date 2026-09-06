@@ -6,7 +6,7 @@ digraph Simulator {
 
   subgraph cluster_eks {
     label="EKS Cluster"; style="rounded"; color="#888888";
-    CRON [label="CronJob: live-event-simulator\nschedule: */10 * * * *\nsuspend: true/false (toggle)", fillcolor="#e8daef"];
+    CRON [label="Airflow DAG: live_simulator_dag\nschedule: */10 * * * *\nKubernetesPodOperator\npause/unpause via Airflow UI\n(no kubectl needed)", fillcolor="#e8daef"];
     API [label="Scoring Service (FastAPI)\nroutes: /score, /events/ingest", fillcolor="#d6eaf8"];
   }
 

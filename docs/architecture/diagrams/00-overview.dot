@@ -6,7 +6,6 @@ digraph Overview {
 
   subgraph cluster_ingest {
     label="Ingestion"; style="rounded"; color="#888888";
-    SIM [label="Live Simulator\n(CronJob, Airflow-independent)", fillcolor="#e8daef"];
     BOOT [label="Bootstrap Generator\n(one-time, local)", fillcolor="#e8daef"];
     API [label="FastAPI Service\n/events/ingest", fillcolor="#d6eaf8"];
   }
@@ -30,7 +29,8 @@ digraph Overview {
     DAG1 [label="medallion_pipeline_dag\nSilver -> Gold\n(via Spark Operator:\nSparkApplication CRs)", fillcolor="#d5f5e3"];
     DAG3 [label="training_dag\n(manual / infrequent)", fillcolor="#d5f5e3"];
     DAG4 [label="analytics_dag\n(daily, time-based)", fillcolor="#d5f5e3"];
-    UI [label="Airflow UI\n(native 'Trigger DAG' button\n= live-demo-safe manual fallback)", shape=box3d, fillcolor="#d5f5e3"];
+    DAG5 [label="live_simulator_dag\n(*/10 * * * *)", fillcolor="#e8daef"];
+    UI [label="Airflow UI\n(native pause/unpause + 'Trigger DAG'\n= live-demo-safe manual control,\nno kubectl needed)", shape=box3d, fillcolor="#d5f5e3"];
   }
 
   COMPACT [label="Compaction\nScheduledSparkApplication\n(Spark Operator's own cron —\nNOT an Airflow DAG)", fillcolor="#f8c471"];
@@ -58,7 +58,7 @@ digraph Overview {
 
   CONSOLE [label="Streamlit Reviewer Console\n(Basic Auth)", shape=box3d, fillcolor="#aed6f1"];
 
-  SIM -> API [label="POST batch"];
+  DAG5 -> API [label="POST batch"];
   BOOT -> BRONZE [label="direct load"];
   API -> BRONZE [label="direct append"];
   BRONZE -> S3EVT;
