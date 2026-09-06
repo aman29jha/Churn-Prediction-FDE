@@ -24,6 +24,9 @@ spec:
     - "--as-of"
     - "2024-06-01T12:00:00Z"
   sparkVersion: "3.4.0"
+  sparkConf:
+    spark.eventLog.enabled: "true"
+    spark.eventLog.dir: "s3a://churn-fde-sandbox-data-lake-784004375291/spark-events/"
   restartPolicy:
     type: OnFailure
     onFailureRetries: 2

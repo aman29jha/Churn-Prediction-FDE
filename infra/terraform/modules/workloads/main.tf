@@ -196,6 +196,14 @@ resource "kubernetes_deployment_v1" "console" {
             value = "http://${kubernetes_service_v1.api_service.metadata[0].name}.${var.namespace}.svc.cluster.local"
           }
           env {
+            name  = "SPARK_HISTORY_PATH"
+            value = "/spark-history"
+          }
+          env {
+            name  = "CLOUDWATCH_DASHBOARD_URL"
+            value = "https://${var.aws_region}.console.aws.amazon.com/cloudwatch/home?region=${var.aws_region}#dashboards:name=${var.dashboard_name}"
+          }
+          env {
             name = "CONSOLE_PASSWORD"
             value_from {
               secret_key_ref {
@@ -234,6 +242,75 @@ resource "kubernetes_service_v1" "console" {
     port {
       port        = 80
       target_port = 8501
+    }
+    type = "ClusterIP"
+  }
+}
+
+# --- Spark History Server ---
+# Designed in docs/architecture/{01-data-platform,05-observability}.md
+# but never actually deployed until now — a real gap. Reads the event
+# logs the Silver/Gold/Analytics SparkApplications now write to
+# s3a://.../spark-events/ (see airflow/dags/specs/*.yaml's sparkConf).
+# Reuses the spark-jobs image (already has a full Spark install) and the
+# spark-jobs IRSA role (already has S3 read access to the data lake
+# bucket) — no new image or role needed.
+resource "kubernetes_deployment_v1" "spark_history" {
+  metadata {
+    name      = "spark-history-server"
+    namespace = var.namespace
+    labels    = { app = "spark-history-server" }
+  }
+  spec {
+    replicas = 1
+    selector {
+      match_labels = { app = "spark-history-server" }
+    }
+    template {
+      metadata {
+        labels = { app = "spark-history-server" }
+      }
+      spec {
+        service_account_name = kubernetes_service_account.spark_jobs.metadata[0].name
+        container {
+          name    = "spark-history-server"
+          image   = "${var.ecr_repository_urls["spark-jobs"]}:${var.image_tag}"
+          command = ["/opt/spark/bin/spark-class", "org.apache.spark.deploy.history.HistoryServer"]
+          env {
+            name  = "SPARK_HISTORY_OPTS"
+            value = "-Dspark.history.fs.logDirectory=s3a://${var.data_lake_bucket}/spark-events/ -Dspark.history.ui.port=18080"
+          }
+          port {
+            container_port = 18080
+          }
+          resources {
+            requests = { cpu = "250m", memory = "1Gi" }
+            limits   = { cpu = "500m", memory = "2Gi" }
+          }
+          readiness_probe {
+            http_get {
+              path = "/"
+              port = 18080
+            }
+            initial_delay_seconds = 20
+            period_seconds        = 15
+          }
+        }
+      }
+    }
+  }
+}
+
+resource "kubernetes_service_v1" "spark_history" {
+  metadata {
+    name      = "spark-history-server"
+    namespace = var.namespace
+  }
+  spec {
+    selector = { app = "spark-history-server" }
+    port {
+      port        = 80
+      target_port = 18080
     }
     type = "ClusterIP"
   }
@@ -282,6 +359,16 @@ resource "kubernetes_ingress_v1" "main" {
           backend {
             service {
               name = kubernetes_service_v1.api_service.metadata[0].name
+              port { number = 80 }
+            }
+          }
+        }
+        path {
+          path      = "/spark-history"
+          path_type = "Prefix"
+          backend {
+            service {
+              name = kubernetes_service_v1.spark_history.metadata[0].name
               port { number = 80 }
             }
           }

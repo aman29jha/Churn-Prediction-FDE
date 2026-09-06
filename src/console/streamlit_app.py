@@ -22,6 +22,8 @@ DOCS_DIR = REPO_ROOT / "docs"
 API_BASE_URL = os.environ.get("API_BASE_URL", "http://127.0.0.1:8811")
 INGEST_TOKEN = os.environ.get("INGEST_TOKEN", "local-dev-token")
 CONSOLE_PASSWORD = os.environ.get("CONSOLE_PASSWORD")
+SPARK_HISTORY_PATH = os.environ.get("SPARK_HISTORY_PATH", "/spark-history")
+CLOUDWATCH_DASHBOARD_URL = os.environ.get("CLOUDWATCH_DASHBOARD_URL", "")
 
 st.set_page_config(page_title="Churn Prediction — Reviewer Console", layout="wide")
 
@@ -55,8 +57,8 @@ st.caption(
     "Terraform re-applied unchanged to the official account once that invite arrives."
 )
 
-tab_arch, tab_model, tab_explain, tab_fairness, tab_lookup = st.tabs(
-    ["Architecture", "Model Dashboard", "Explainability", "Fairness", "Live Lookup"]
+tab_arch, tab_model, tab_explain, tab_fairness, tab_observability, tab_lookup = st.tabs(
+    ["Architecture", "Model Dashboard", "Explainability", "Fairness", "Observability", "Live Lookup"]
 )
 
 with tab_arch:
@@ -114,6 +116,39 @@ with tab_fairness:
             st.success("No fairness findings above threshold.")
         st.dataframe(fairness_df)
     st.markdown((DOCS_DIR / "fairness.md").read_text())
+
+with tab_observability:
+    st.header("Observability")
+    st.caption(
+        "Both panels below are the real, live deployed monitoring surfaces — not screenshots — "
+        "see docs/architecture/05-observability.md for the full design (auth/rate-limiting/"
+        "observability/failure-modes dashboard panels, log retention, alarms)."
+    )
+
+    st.subheader("Spark History Server")
+    st.caption(
+        "Real job DAGs, stage timings, and executor metrics for every Silver/Gold/Analytics "
+        "SparkApplication run. Served on the same ALB as this console, at "
+        f"`{SPARK_HISTORY_PATH}` — embedded below; if the embed doesn't render "
+        "(Spark's UI assets don't always cooperate inside an iframe), use the direct link."
+    )
+    st.markdown(f"[Open Spark History Server directly]({SPARK_HISTORY_PATH})")
+    st.components.v1.iframe(SPARK_HISTORY_PATH, height=600, scrolling=True)
+
+    st.divider()
+
+    st.subheader("CloudWatch Dashboard")
+    st.caption(
+        "The 4-panel production-readiness dashboard (auth, rate limiting, latency/error rate, "
+        "failure modes). Requires AWS Console sign-in to view — CloudWatch dashboards can't be "
+        "embedded without enabling paid public sharing, so this is a direct link rather than an "
+        "iframe. Screenshots are captured into docs/evidence/ as the fallback if a reviewer's "
+        "session doesn't have AWS console access."
+    )
+    if CLOUDWATCH_DASHBOARD_URL:
+        st.markdown(f"[Open CloudWatch Dashboard]({CLOUDWATCH_DASHBOARD_URL})")
+    else:
+        st.info("CLOUDWATCH_DASHBOARD_URL not set in this environment.")
 
 with tab_lookup:
     st.header("Live Lookup")
