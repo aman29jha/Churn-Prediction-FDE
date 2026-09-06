@@ -18,6 +18,19 @@ module "eks" {
   private_subnet_ids = module.networking.private_subnet_ids
 }
 
+# Real race condition hit in practice: the kubernetes_namespace resource
+# fired its API call before the new EKS access entry (created in
+# module.eks) had finished propagating, and failed with "Unauthorized" —
+# while the LB controller Helm release, created in the same apply,
+# survived because Helm's own install-wait logic retries internally. A
+# plain `depends_on` on module.eks isn't enough by itself since this is
+# an eventual-consistency delay, not just an ordering problem — hence the
+# explicit sleep.
+resource "time_sleep" "wait_for_eks_access_entry" {
+  depends_on      = [module.eks]
+  create_duration = "20s"
+}
+
 module "storage" {
   source      = "./modules/storage"
   project     = var.project
@@ -66,6 +79,15 @@ module "messaging" {
   alarm_topic_arn               = module.observability.alarm_topic_arn
 }
 
+module "database" {
+  source                        = "./modules/database"
+  project                       = var.project
+  environment                   = var.environment
+  vpc_id                        = module.networking.vpc_id
+  private_subnet_ids            = module.networking.private_subnet_ids
+  eks_cluster_security_group_id = module.eks.cluster_security_group_id
+}
+
 module "k8s_addons" {
   source                    = "./modules/k8s-addons"
   project                   = var.project
@@ -78,4 +100,22 @@ module "k8s_addons" {
   oidc_provider_arn         = module.eks.oidc_provider_arn
   oidc_provider_url         = module.eks.oidc_provider_url
   dags_git_repo             = var.dags_git_repo
+  airflow_db_endpoint       = module.database.endpoint
+  airflow_db_name           = module.database.db_name
+  airflow_db_username       = module.database.username
+  airflow_db_password       = module.database.password
+
+  depends_on = [time_sleep.wait_for_eks_access_entry]
+}
+
+module "workloads" {
+  source                = "./modules/workloads"
+  aws_region            = var.aws_region
+  image_tag             = var.image_tag
+  ecr_repository_urls   = module.ecr.repository_urls
+  model_registry_bucket = module.storage.model_registry_bucket
+  api_service_role_arn  = module.irsa.api_service_role_arn
+  spark_jobs_role_arn   = module.irsa.spark_jobs_role_arn
+
+  depends_on = [module.k8s_addons]
 }

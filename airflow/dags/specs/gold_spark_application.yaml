@@ -1,0 +1,67 @@
+# SparkApplication for the Silver -> Gold job (RFM features, model
+# scoring, RFM segments). See docs/architecture/01-data-platform.md.
+apiVersion: sparkoperator.k8s.io/v1beta2
+kind: SparkApplication
+metadata:
+  name: gold-transform
+  namespace: churn-service
+spec:
+  type: Python
+  mode: cluster
+  image: "784004375291.dkr.ecr.ap-south-1.amazonaws.com/churn-fde-sandbox-spark-jobs:sha-83887be"
+  imagePullPolicy: IfNotPresent
+  mainApplicationFile: local:///app/scripts/spark_job_entrypoint.py
+  arguments:
+    - "gold"
+    - "--input"
+    - "s3a://churn-fde-sandbox-data-lake-784004375291/silver/events/"
+    - "--output"
+    - "s3a://churn-fde-sandbox-data-lake-784004375291/gold/"
+    - "--model"
+    - "/models/xgboost_model.json"
+    - "--baseline"
+    - "/models/baseline.pkl"
+    - "--as-of"
+    - "2024-06-01T12:00:00Z"
+  sparkVersion: "3.4.0"
+  restartPolicy:
+    type: OnFailure
+    onFailureRetries: 2
+    onFailureRetryInterval: 30
+  driver:
+    cores: 1
+    memory: "1g"
+    serviceAccount: spark-jobs
+    nodeSelector:
+      workload-type: spark-driver
+    tolerations:
+      - key: workload-type
+        operator: Equal
+        value: spark-driver
+        effect: NoSchedule
+    # Model artifacts synced from S3 the same way api-service does it —
+    # see modules/workloads/main.tf's initContainer pattern.
+    initContainers:
+      - name: sync-model-artifacts
+        image: public.ecr.aws/aws-cli/aws-cli:2.17.62
+        command: ["sh", "-c", "aws s3 sync s3://churn-fde-sandbox-model-registry-784004375291/ /models/ --region ap-south-1"]
+        volumeMounts:
+          - name: models
+            mountPath: /models
+    volumeMounts:
+      - name: models
+        mountPath: /models
+  executor:
+    cores: 1
+    instances: 1
+    memory: "1g"
+    nodeSelector:
+      workload-type: spark-executor
+    tolerations:
+      - key: workload-type
+        operator: Equal
+        value: spark-executor
+        effect: NoSchedule
+  volumes:
+    - name: models
+      emptyDir: {}

@@ -50,9 +50,44 @@ resource "aws_eks_cluster" "this" {
 
   access_config {
     authentication_mode = "API"
+    # NOTE: bootstrap_cluster_creator_admin_permissions is a create-time-only
+    # field — setting it on an EXISTING cluster forces a full replacement
+    # (confirmed via `terraform plan` before applying anything here: it
+    # showed the cluster and its OIDC provider both being destroyed and
+    # recreated). Left at its default (false) deliberately; the explicit
+    # access entry below is the non-destructive fix for a cluster that
+    # already exists. A fresh cluster (e.g. the official account later)
+    # could set this to true instead of needing the explicit entry, but
+    # the explicit entry works either way and is what's actually in use here.
   }
 
   depends_on = [aws_iam_role_policy_attachment.cluster_policy]
+}
+
+# Explicit access entry for the IAM principal actually running Terraform —
+# the fix for a real gap this hit in practice: `terraform apply`
+# succeeded on every AWS-side resource, but every Kubernetes-touching
+# resource (Helm releases, the namespace, Karpenter NodePools) failed
+# with "Unauthorized" / "the server has asked for the client to provide
+# credentials" — `aws eks list-access-entries` confirmed the calling IAM
+# user had no access entry at all. This resource is what actually fixes
+# that, and stays correct even if a different principal re-applies this
+# to the official account later.
+data "aws_caller_identity" "current" {}
+
+resource "aws_eks_access_entry" "terraform_principal" {
+  cluster_name  = aws_eks_cluster.this.name
+  principal_arn = data.aws_caller_identity.current.arn
+}
+
+resource "aws_eks_access_policy_association" "terraform_principal_admin" {
+  cluster_name  = aws_eks_cluster.this.name
+  principal_arn = data.aws_caller_identity.current.arn
+  policy_arn    = "arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy"
+
+  access_scope {
+    type = "cluster"
+  }
 }
 
 # --- Fargate: steady lightweight services + system pods ---

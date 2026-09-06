@@ -21,8 +21,34 @@ REPORTS_DIR = REPO_ROOT / "reports"
 DOCS_DIR = REPO_ROOT / "docs"
 API_BASE_URL = os.environ.get("API_BASE_URL", "http://127.0.0.1:8811")
 INGEST_TOKEN = os.environ.get("INGEST_TOKEN", "local-dev-token")
+CONSOLE_PASSWORD = os.environ.get("CONSOLE_PASSWORD")
 
 st.set_page_config(page_title="Churn Prediction — Reviewer Console", layout="wide")
+
+# Auth note: docs/architecture/06-reviewer-console.md originally specified
+# HTTP Basic Auth at the ingress level, assuming nginx-ingress semantics.
+# Real finding from actually provisioning the ingress controller: AWS ALB
+# (via the AWS Load Balancer Controller, which is what we actually run —
+# see docs/architecture/01-data-platform.md) does NOT support htpasswd-
+# style Basic Auth natively; it only supports Cognito or OIDC auth actions,
+# either of which needs a full User Pool / IdP setup disproportionate to
+# this exercise. Pragmatic correction: a simple app-level password gate
+# instead — good enough for a small, short-lived reviewer audience, same
+# reasoning the original design used to justify skipping a full login
+# system, just enforced one layer up the stack than originally planned.
+if CONSOLE_PASSWORD:
+    if "authenticated" not in st.session_state:
+        st.session_state["authenticated"] = False
+    if not st.session_state["authenticated"]:
+        st.title("Churn Prediction — Reviewer Console")
+        entered = st.text_input("Password", type="password")
+        if st.button("Enter"):
+            if entered == CONSOLE_PASSWORD:
+                st.session_state["authenticated"] = True
+                st.rerun()
+            else:
+                st.error("Incorrect password.")
+        st.stop()
 st.title("Churn Prediction Service — Reviewer Console")
 st.caption(
     "Localytics FDE take-home. Personal AWS sandbox deployment; "

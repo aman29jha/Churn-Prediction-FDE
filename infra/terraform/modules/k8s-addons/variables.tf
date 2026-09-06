@@ -11,3 +11,10 @@ variable "dags_git_repo" {
   type        = string
   description = "Git repo Airflow's git-sync sidecar pulls airflow/dags/ from — this fork, e.g. https://github.com/aman29jha/Churn-Prediction-FDE.git"
 }
+variable "airflow_db_endpoint" { type = string }
+variable "airflow_db_name" { type = string }
+variable "airflow_db_username" { type = string }
+variable "airflow_db_password" {
+  type      = string
+  sensitive = true
+}

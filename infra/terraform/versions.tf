@@ -39,6 +39,14 @@ terraform {
       source  = "alekc/kubectl"
       version = "~> 2.0"
     }
+    time = {
+      source  = "hashicorp/time"
+      version = "~> 0.12"
+    }
+    random = {
+      source  = "hashicorp/random"
+      version = "~> 3.6"
+    }
   }
 
   # Personal sandbox first (see docs/architecture/00-overview.md); the same

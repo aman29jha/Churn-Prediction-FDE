@@ -61,3 +61,9 @@ variable "dags_git_repo" {
   type        = string
   default     = "https://github.com/aman29jha/Churn-Prediction-FDE.git"
 }
+
+variable "image_tag" {
+  description = "Git-SHA-based tag for the 3 Docker images already pushed to ECR (see docs/architecture/08-infrastructure.md)."
+  type        = string
+  default     = "sha-83887be"
+}

@@ -193,7 +193,12 @@ resource "kubectl_manifest" "spark_ec2_node_class" {
     metadata   = { name = "spark-jobs" }
     spec = {
       amiFamily = "AL2023"
-      role      = aws_iam_role.node_instance.name
+      # Required as of Karpenter v1's EC2NodeClass API (v1beta1 accepted
+      # amiFamily alone; v1 requires an explicit selector even for the
+      # standard alias) — caught by the real API rejecting the manifest,
+      # not by anything `terraform validate` could see.
+      amiSelectorTerms = [{ alias = "al2023@latest" }]
+      role             = aws_iam_role.node_instance.name
       subnetSelectorTerms = [
         for id in var.private_subnet_ids : { id = id }
       ]
@@ -279,6 +284,22 @@ resource "helm_release" "spark_operator" {
 # Single scheduler, no HA, no worker autoscaling — see
 # docs/architecture/03-orchestration.md for why this is a deliberate
 # scope decision, not an oversight.
+#
+# Metadata DB is RDS, not the chart's built-in postgresql subchart — see
+# modules/database/main.tf for why (Fargate can't attach the EBS volume
+# that subchart's PVC needs; found by actually deploying, not designed
+# in advance).
+
+resource "kubernetes_secret" "airflow_metadata_db" {
+  metadata {
+    name      = "airflow-metadata-secret"
+    namespace = kubernetes_namespace.churn_service.metadata[0].name
+  }
+  data = {
+    connection = "postgresql://${var.airflow_db_username}:${var.airflow_db_password}@${var.airflow_db_endpoint}:5432/${var.airflow_db_name}?sslmode=require"
+  }
+  type = "Opaque"
+}
 
 resource "helm_release" "airflow" {
   name             = "airflow"
@@ -297,10 +318,10 @@ resource "helm_release" "airflow" {
       replicas = 1
     }
     postgresql = {
-      enabled = true
-      primary = {
-        persistence = { size = "8Gi" } # small — Airflow's own metadata only, not application data
-      }
+      enabled = false # RDS instead — see modules/database and the kubernetes_secret above
+    }
+    data = {
+      metadataSecretName = kubernetes_secret.airflow_metadata_db.metadata[0].name
     }
     redis = {
       enabled = false # not needed: KubernetesExecutor doesn't use the Celery/Redis queue
@@ -315,5 +336,6 @@ resource "helm_release" "airflow" {
     }
   })]
 
-  depends_on = [kubernetes_namespace.churn_service]
+  timeout    = 600 # first-run DB migrations + git-sync clone can exceed the 300s default
+  depends_on = [kubernetes_namespace.churn_service, kubernetes_secret.airflow_metadata_db]
 }

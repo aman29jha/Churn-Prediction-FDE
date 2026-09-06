@@ -1,0 +1,53 @@
+# SparkApplication for the Bronze -> Silver job. Submitted by
+# medallion_pipeline_dag via SparkKubernetesOperator. See
+# docs/architecture/{01-data-platform,03-orchestration}.md.
+#
+# Image tag is hardcoded here deliberately — per docs/architecture/08-infrastructure.md's
+# versioning section, the image version for batch jobs lives in this
+# git-synced file, not in a mutable `:latest` tag (ECR repos are
+# IMMUTABLE tag mutability). Bump this line + commit to change which
+# image future runs use; already-running/completed runs are unaffected.
+apiVersion: sparkoperator.k8s.io/v1beta2
+kind: SparkApplication
+metadata:
+  name: silver-transform
+  namespace: churn-service
+spec:
+  type: Python
+  mode: cluster
+  image: "784004375291.dkr.ecr.ap-south-1.amazonaws.com/churn-fde-sandbox-spark-jobs:sha-83887be"
+  imagePullPolicy: IfNotPresent
+  mainApplicationFile: local:///app/scripts/spark_job_entrypoint.py
+  arguments:
+    - "silver"
+    - "--input"
+    - "s3a://churn-fde-sandbox-data-lake-784004375291/bronze/"
+    - "--output"
+    - "s3a://churn-fde-sandbox-data-lake-784004375291/silver/events/"
+  sparkVersion: "3.4.0"
+  restartPolicy:
+    type: OnFailure
+    onFailureRetries: 2
+    onFailureRetryInterval: 30
+  driver:
+    cores: 1
+    memory: "1g"
+    serviceAccount: spark-jobs
+    nodeSelector:
+      workload-type: spark-driver
+    tolerations:
+      - key: workload-type
+        operator: Equal
+        value: spark-driver
+        effect: NoSchedule
+  executor:
+    cores: 1
+    instances: 1
+    memory: "1g"
+    nodeSelector:
+      workload-type: spark-executor
+    tolerations:
+      - key: workload-type
+        operator: Equal
+        value: spark-executor
+        effect: NoSchedule

@@ -23,7 +23,9 @@ A single, consolidated, password-protected page tying the entire submission toge
 
 ## Auth
 
-**HTTP Basic Auth at the ingress level** (an nginx/ALB ingress annotation + a Kubernetes Secret holding the credentials) — appropriate for a small, short-lived reviewer audience. No full login system or Cognito user pool needed. Credentials are shared with Localytics separately (in the submission notes), never committed to this repo.
+**Corrected during actual deployment**: originally specified as HTTP Basic Auth at the ingress level, assuming nginx-ingress semantics. Real finding once the AWS Load Balancer Controller was actually provisioned: **AWS ALB does not support htpasswd-style Basic Auth natively** — it only offers Cognito or OIDC auth actions, either of which needs a full User Pool/IdP setup disproportionate to a small, short-lived reviewer audience.
+
+**What's actually implemented**: a simple app-level password gate inside the Streamlit app itself (`CONSOLE_PASSWORD` env var, set via a Kubernetes Secret, checked at the top of `streamlit_app.py` before rendering anything). Same reasoning the original design used to justify skipping a full login system — just enforced one layer up the stack than originally planned. Credentials are shared with Localytics separately (in the submission notes), never committed to this repo.
 
 ## Risk: AWS access lapses after 4 days
 

@@ -1,0 +1,47 @@
+# SparkApplication for the analytics batch pipeline (KPI trends, segment
+# migration, cohort retention). See docs/architecture/07-analytics.md.
+# Daily, time-based — deliberately decoupled from the event-triggered
+# medallion_pipeline_dag's cadence.
+apiVersion: sparkoperator.k8s.io/v1beta2
+kind: SparkApplication
+metadata:
+  name: analytics-transform
+  namespace: churn-service
+spec:
+  type: Python
+  mode: cluster
+  image: "784004375291.dkr.ecr.ap-south-1.amazonaws.com/churn-fde-sandbox-spark-jobs:sha-83887be"
+  imagePullPolicy: IfNotPresent
+  mainApplicationFile: local:///app/scripts/spark_job_entrypoint.py
+  arguments:
+    - "gold" # placeholder entrypoint arg — analytics-specific job logic (kpi_daily/segment_migration/cohort_retention) is a documented next step, not yet a distinct entrypoint mode
+    - "--input"
+    - "s3a://churn-fde-sandbox-data-lake-784004375291/silver/events/"
+    - "--output"
+    - "s3a://churn-fde-sandbox-data-lake-784004375291/gold/analytics/"
+  sparkVersion: "3.4.0"
+  restartPolicy:
+    type: OnFailure
+    onFailureRetries: 1
+  driver:
+    cores: 1
+    memory: "1g"
+    serviceAccount: spark-jobs
+    nodeSelector:
+      workload-type: spark-driver
+    tolerations:
+      - key: workload-type
+        operator: Equal
+        value: spark-driver
+        effect: NoSchedule
+  executor:
+    cores: 1
+    instances: 1
+    memory: "1g"
+    nodeSelector:
+      workload-type: spark-executor
+    tolerations:
+      - key: workload-type
+        operator: Equal
+        value: spark-executor
+        effect: NoSchedule

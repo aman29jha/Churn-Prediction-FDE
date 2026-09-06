@@ -9,3 +9,8 @@ output "dashboard_name" { value = module.observability.dashboard_name }
 output "kubeconfig_command" {
   value = "aws eks update-kubeconfig --name ${module.eks.cluster_name} --region ${var.aws_region}"
 }
+output "ingress_hostname" { value = module.workloads.ingress_hostname }
+output "console_password" {
+  value     = module.workloads.console_password
+  sensitive = true
+}
