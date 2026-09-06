@@ -27,6 +27,10 @@ We installed the **Spark Operator** (a separate controller + CRDs + admission we
 
 **Self-hosted on EKS** (Helm chart, `KubernetesExecutor`) rather than managed MWAA — consistent with the same capability-demonstration choice made for Spark, accepted alongside the added setup/ops time within the 4-day window.
 
+**Deliberately minimal/lite configuration** — a single scheduler pod, a lightweight Postgres backend (no HA, no read replicas, sized for a demo not production scale), no worker autoscaling. This directly addresses the setup-time/ops-risk a full production-grade Airflow install would carry, while keeping the real DAG-dependency-chaining/retry/UI story intact.
+
+**Live-demo safety net**: Airflow's UI has a native **"Trigger DAG"** button — if the automated event-driven chain (S3 -> SNS -> SQS -> Lambda) has any hiccup during a live reviewer call, triggering `medallion_pipeline_dag` manually from the UI guarantees the pipeline still runs, with zero extra code needed to build that fallback.
+
 - **`medallion_pipeline_dag`**: `Silver task -> Gold task`, real dependency chaining (Gold only runs if Silver succeeded) and automatic retries — not a timer-based guess at sequencing.
 - **`training_dag`**: manual trigger or infrequent (e.g. weekly) schedule, `KubernetesPodOperator` running plain Python/XGBoost (not Spark — see [../modeling.md](../modeling.md) for why). Deliberately decoupled from the main pipeline's cadence: **train rarely, score often** is itself a production-readiness talking point.
 - **`analytics_dag`**: daily, time-based schedule (not event-triggered like `medallion_pipeline_dag`) — KPI trends and cohort retention don't need low-latency refresh, and shouldn't couple to or slow down the churn-scoring critical path. See [07-analytics.md](07-analytics.md).

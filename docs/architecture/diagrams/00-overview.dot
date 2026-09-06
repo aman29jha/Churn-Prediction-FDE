@@ -6,7 +6,7 @@ digraph Overview {
 
   subgraph cluster_ingest {
     label="Ingestion"; style="rounded"; color="#888888";
-    SIM [label="Live Simulator\n(CronJob)", fillcolor="#e8daef"];
+    SIM [label="Live Simulator\n(CronJob, Airflow-independent)", fillcolor="#e8daef"];
     BOOT [label="Bootstrap Generator\n(one-time, local)", fillcolor="#e8daef"];
     API [label="FastAPI Service\n/events/ingest", fillcolor="#d6eaf8"];
   }
@@ -15,15 +15,25 @@ digraph Overview {
     label="Data Lake (Iceberg on S3, Glue Catalog)"; style="rounded"; color="#888888";
     BRONZE [label="Bronze\nbronze.events", fillcolor="#cd7f32", fontcolor="white"];
     SILVER [label="Silver\nsilver.events", fillcolor="#bdc3c7"];
-    GOLD [label="Gold\nrfm_features / churn_scores / rfm_segments", fillcolor="#f1c40f"];
+    GOLD [label="Gold (append-only, by run_date)\nrfm_features / churn_scores / rfm_segments", fillcolor="#f1c40f"];
+    ANALYTICS_T [label="Analytics tables\nkpi_daily / segment_migration /\ncohort_retention", fillcolor="#f8c471"];
+  }
+
+  subgraph cluster_trigger {
+    label="Event-driven trigger"; style="rounded"; color="#888888";
+    S3EVT [label="S3 Event -> SNS -> SQS\n-> Lambda (native batching)", fillcolor="#f5b7b1"];
   }
 
   subgraph cluster_orch {
-    label="Orchestration (Airflow on EKS)"; style="rounded"; color="#888888";
-    DAG1 [label="medallion_pipeline_dag\nSilver -> Gold", fillcolor="#d5f5e3"];
-    DAG2 [label="compaction_dag\n(independent schedule)", fillcolor="#d5f5e3"];
+    label="Self-hosted Airflow on EKS\n(minimal/lite config: single scheduler,\nlightweight Postgres, no HA —\ndeliberately scoped for demo, not prod scale)";
+    style="rounded"; color="#888888";
+    DAG1 [label="medallion_pipeline_dag\nSilver -> Gold\n(via Spark Operator:\nSparkApplication CRs)", fillcolor="#d5f5e3"];
     DAG3 [label="training_dag\n(manual / infrequent)", fillcolor="#d5f5e3"];
+    DAG4 [label="analytics_dag\n(daily, time-based)", fillcolor="#d5f5e3"];
+    UI [label="Airflow UI\n(native 'Trigger DAG' button\n= live-demo-safe manual fallback)", shape=box3d, fillcolor="#d5f5e3"];
   }
+
+  COMPACT [label="Compaction\nScheduledSparkApplication\n(Spark Operator's own cron —\nNOT an Airflow DAG)", fillcolor="#f8c471"];
 
   subgraph cluster_serve {
     label="Serving"; style="rounded"; color="#888888";
@@ -35,7 +45,7 @@ digraph Overview {
 
   subgraph cluster_model {
     label="Modeling"; style="rounded"; color="#888888";
-    TRAIN [label="Training\nXGBoost + SHAP\n(plain Python)", fillcolor="#fdebd0"];
+    TRAIN [label="Training\nXGBoost + SHAP\n(plain Python, not Spark)", fillcolor="#fdebd0"];
     S3MODEL [label="S3 Model Registry", fillcolor="#fdebd0"];
   }
 
@@ -51,15 +61,19 @@ digraph Overview {
   SIM -> API [label="POST batch"];
   BOOT -> BRONZE [label="direct load"];
   API -> BRONZE [label="direct append"];
-  BRONZE -> DAG1;
-  DAG1 -> SILVER [label="Spark job"];
+  BRONZE -> S3EVT;
+  S3EVT -> DAG1 [label="triggers\n(schedule_interval=None)"];
+  DAG1 -> SILVER;
   SILVER -> DAG1;
-  DAG1 -> GOLD [label="Spark job"];
+  DAG1 -> GOLD;
   GOLD -> DDB;
   GOLD -> ATHENA;
-  DAG2 -> BRONZE [style=dashed, label="rewrite_data_files"];
-  DAG2 -> SILVER [style=dashed];
-  DAG2 -> GOLD [style=dashed];
+  SILVER -> ANALYTICS_T [style=dashed];
+  GOLD -> ANALYTICS_T [style=dashed, label="historized"];
+  DAG4 -> ANALYTICS_T;
+  COMPACT -> BRONZE [style=dashed, label="rewrite_data_files"];
+  COMPACT -> SILVER [style=dashed];
+  COMPACT -> GOLD [style=dashed];
   DAG3 -> GOLD [label="reads"];
   DAG3 -> TRAIN;
   TRAIN -> S3MODEL;
@@ -68,10 +82,13 @@ digraph Overview {
   API2 -> ING;
   API -> CW [style=dotted];
   API2 -> CW [style=dotted];
+  DAG1 -> CW [style=dotted];
   API2 -> XRAY [style=dotted];
   DAG1 -> HIST [style=dotted];
+  DAG1 -> UI [style=dotted];
   CONSOLE -> API2;
   CONSOLE -> ATHENA;
   CONSOLE -> HIST;
   CONSOLE -> CW;
+  CONSOLE -> UI [style=dashed, label="link out"];
 }

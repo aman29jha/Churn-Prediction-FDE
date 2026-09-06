@@ -12,9 +12,9 @@ digraph Simulator {
 
   REG [label="S3: sim-state/customer_registry.json\ncustomer_id, archetype, last_state", shape=cylinder, fillcolor="#fdebd0"];
   SECRET [label="K8s Secret\ningest bearer token", shape=note, fillcolor="#fadbd8"];
-  RAW [label="S3: raw/incoming/date=.../hour=...\n(partitioned for Athena)", shape=cylinder, fillcolor="#cd7f32", fontcolor="white"];
+  RAW [label="Bronze Iceberg table\nbronze.events\n(direct append, lightweight writer)", shape=cylinder, fillcolor="#cd7f32", fontcolor="white"];
   CW [label="CloudWatch\nlogs + latency/error/throughput", fillcolor="#f5eef8"];
-  FEAT [label="Feature (Silver/Gold) pipeline\npicks up on next scheduled run", fillcolor="#bdc3c7"];
+  FEAT [label="S3 Event -> SNS -> SQS -> Lambda\n-> triggers Airflow (event-driven,\nnot polled) — see 03-orchestration", fillcolor="#f5b7b1"];
 
   CRON -> REG [label="1. read, pick N customers\nweighted by archetype"];
   SECRET -> CRON [label="3. inject bearer token"];

@@ -6,53 +6,9 @@ Predict customer churn from raw mobile-engagement events to drive campaign audie
 
 ## System diagram
 
-```mermaid
-flowchart TB
-  subgraph Ingestion
-    SIM["Live Simulator (Airflow-independent CronJob)"] -->|"POST /events/ingest"| API["FastAPI Service"]
-    BOOT["Bootstrap Generator (one-time, local script)"] -->|"aws s3 cp"| BRONZE
-  end
+![System overview](diagrams/00-overview.svg)
 
-  API -->|"direct append"| BRONZE[("Bronze Iceberg: bronze.events")]
-
-  subgraph Orchestration["Airflow (self-hosted on EKS)"]
-    DAG1["medallion_pipeline_dag: Silver -> Gold"]
-    DAG2["compaction_dag (independent schedule)"]
-    DAG3["training_dag (manual / infrequent)"]
-  end
-
-  BRONZE --> DAG1
-  DAG1 -->|"Silver Spark Job"| SILVER[("Silver Iceberg: silver.events")]
-  SILVER -->|"Gold Spark Job"| GOLD[("Gold Iceberg: rfm_features / churn_scores / rfm_segments")]
-  GOLD --> DDB[("DynamoDB: customer_scores")]
-  GOLD --> ATHENA["Athena (via Glue Catalog)"]
-  DAG2 -.->|"rewrite_data_files, expire_snapshots"| BRONZE
-  DAG2 -.-> SILVER
-  DAG2 -.-> GOLD
-  DAG3 -->|"reads Gold"| TRAIN["Training: XGBoost + SHAP (plain Python)"]
-  TRAIN --> S3MODEL[("S3: model registry")]
-
-  S3MODEL --> API2["FastAPI: /score/{customer_id}"]
-  DDB --> API2
-  API2 --> ING["Ingress (ALB/nginx)"]
-
-  subgraph Observability
-    CW["CloudWatch Logs + EMF metrics"]
-    XRAY["AWS X-Ray tracing"]
-    HIST["Spark History Server"]
-  end
-
-  API -.-> CW
-  API2 -.-> CW
-  DAG1 -.-> CW
-  API2 -.-> XRAY
-  DAG1 -.-> HIST
-
-  CONSOLE["Streamlit Reviewer Console (Basic Auth)"] --> API2
-  CONSOLE --> ATHENA
-  CONSOLE --> HIST
-  CONSOLE --> CW
-```
+Compaction runs as a `ScheduledSparkApplication` (the Spark Operator's own native cron) — it is deliberately **not** an Airflow DAG, since it has no dependencies to sequence. Airflow itself runs in a minimal/lite configuration (single scheduler, lightweight Postgres, no HA) — scoped for a demo, not production scale, to cut setup time/risk. Its UI's native "Trigger DAG" button doubles as the live-demo-safe manual fallback if the automated event-driven trigger chain hiccups on the call.
 
 ## Component index
 

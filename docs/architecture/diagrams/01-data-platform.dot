@@ -8,7 +8,7 @@ digraph DataPlatform {
     label="EKS"; style="rounded"; color="#888888";
 
     subgraph cluster_karpenter {
-      label="Karpenter-managed EC2 NodePools\n(spark-submit --master k8s://...)"; style="rounded"; color="#aaaaaa";
+      label="Karpenter-managed EC2 NodePools\n(via Spark Operator: SparkApplication /\nScheduledSparkApplication CRDs)"; style="rounded"; color="#aaaaaa";
       NP_OD [label="NodePool: on-demand\n(Spark drivers)", shape=component, fillcolor="#f5b7b1"];
       NP_SPOT [label="NodePool: spot\n(Spark executors)", shape=component, fillcolor="#a9dfbf"];
       SILVERJOB [label="Silver Spark Job\ndriver (on-demand) +\n1-2 executors (spot)", fillcolor="#bdc3c7"];
