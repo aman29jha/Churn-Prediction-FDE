@@ -148,6 +148,14 @@ resource "aws_iam_role_policy" "karpenter_controller" {
       # ssm:GetParameter is separately required for `amiSelectorTerms:
       # alias: al2023@latest` to resolve to a real AMI ID via SSM.
       {
+        # Resource = "*" here is broader than AWS's own published Karpenter
+        # controller policy, which scopes these to instance profiles matching
+        # a naming/tag convention. Accepted as-is for this personal sandbox
+        # account (same trade-off already made explicitly for the Glue
+        # Catalog "*" in modules/irsa/main.tf) — worth tightening to a
+        # condition on the "${var.project}-${var.environment}-*" naming
+        # convention already used for aws_iam_instance_profile.node_instance
+        # below before reusing this policy against a shared/production account.
         Sid    = "InstanceProfileManagement"
         Effect = "Allow"
         Action = [

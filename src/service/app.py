@@ -2,12 +2,19 @@
 FastAPI scoring + ingest service. See docs/architecture/04-serving.md and
 docs/architecture/02-simulator.md.
 
-Local-dev stand-ins for the production AWS pieces (documented inline,
-swapped for the real thing in infra/terraform + the deployed service):
-- `models/customer_scores.json` stands in for the DynamoDB fast-lookup cache.
-- `data/local_bronze/events.jsonl` stands in for the Bronze Iceberg table.
+Stand-ins still in place in the DEPLOYED service, not just locally — see
+SUBMISSION.md and docs/architecture/04-serving.md's "Current implementation
+status" for the honest gap this leaves (no live DynamoDB read, no
+cold-start fallback for a customer_id outside the snapshot):
+- `models/customer_scores.json` stands in for a live DynamoDB fast-lookup
+  read — it's a snapshot synced from the S3 model registry at pod startup
+  (refreshed from the real Gold Spark job's output), not a per-request read.
+- `data/local_bronze/events.jsonl` stands in for the Bronze Iceberg table
+  (real ingest in production appends directly to Bronze via a lightweight
+  Iceberg writer, not a local file).
 - A single shared-secret bearer token stands in for the real service-to-
-  service auth (a K8s Secret in production).
+  service auth — this one genuinely is what's deployed (a K8s Secret
+  injecting the same token), not a stand-in.
 """
 from __future__ import annotations
 

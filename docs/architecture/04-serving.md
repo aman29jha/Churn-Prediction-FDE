@@ -2,6 +2,23 @@
 
 ![Serving architecture](diagrams/04-serving.svg)
 
+## Current implementation status (read this before the design below)
+
+The design below (DynamoDB fast path + on-the-fly cold-start compute) is the
+**target**, and the DynamoDB table + IRSA grants for it are genuinely
+provisioned (`infra/terraform/modules/storage/main.tf`,
+`modules/irsa/main.tf`). The **deployed** `src/service/app.py` does not read
+from DynamoDB yet — it serves `/score/{customer_id}` from a static JSON
+snapshot (`models/customer_scores.json`) synced from the S3 model registry
+at pod startup. That snapshot is refreshed from the real Gold Spark job's
+output (all customers scored in the last Gold run, not just the training-time
+sample), but it is a point-in-time file, not a live per-request DynamoDB
+lookup — and there is no cold-start fallback in the request path: a
+`customer_id` with no row in that snapshot returns a plain `404`, not an
+on-the-fly computed score. See `SUBMISSION.md` at the repo root for why, and
+for what wiring this up for real would take. Sections below describe the
+target design as originally specified.
+
 ## Two stores, two purposes
 
 A standard, deliberate pattern rather than one store trying to do both jobs:
