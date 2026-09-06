@@ -90,6 +90,19 @@ resource "aws_iam_role_policy" "spark_jobs" {
         Action   = ["s3:PutObject", "s3:GetObject"]
         Resource = "${var.model_registry_bucket_arn}/*"
       },
+      # Real bug found by actually running the gold_transform SparkApplication:
+      # its initContainer runs `aws s3 sync` to pull model artifacts, which
+      # calls ListObjectsV2 on the BUCKET itself (not a key prefix) before it
+      # can GetObject any individual file — failed with AccessDenied despite
+      # GetObject/PutObject already being granted, since s3:ListBucket is a
+      # bucket-level action requiring the bucket ARN itself as Resource, not
+      # the "/*" object-level ARN above.
+      {
+        Sid      = "ListModelRegistry"
+        Effect   = "Allow"
+        Action   = ["s3:ListBucket"]
+        Resource = var.model_registry_bucket_arn
+      },
       {
         Sid      = "GlueCatalogForIceberg"
         Effect   = "Allow"
