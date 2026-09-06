@@ -311,6 +311,17 @@ resource "helm_release" "airflow" {
 
   values = [yamlencode({
     executor = "KubernetesExecutor"
+    # Keep failed KubernetesExecutor task pods around (chart default deletes
+    # them immediately) — without this, a failing SparkKubernetesOperator/
+    # KubernetesPodOperator task's pod vanishes in seconds with no remote
+    # logging configured, making root-causing any real failure impossible
+    # via kubectl. Found this the hard way debugging the first real
+    # medallion_pipeline_dag run.
+    config = {
+      kubernetes_executor = {
+        delete_worker_pods_on_failure = "False"
+      }
+    }
     scheduler = {
       replicas = 1 # minimal/lite — no HA, sized for a demo not production scale
       # Real finding: the chart's default startupProbe only allows 60s
@@ -381,4 +392,45 @@ resource "helm_release" "airflow" {
 
   timeout    = 600 # first-run DB migrations + git-sync clone can exceed the 300s default
   depends_on = [kubernetes_namespace.churn_service, kubernetes_secret.airflow_metadata_db]
+}
+
+# Real bug found by actually triggering medallion_pipeline_dag: the Airflow
+# chart's default RBAC only covers core Airflow resources (pods, its own
+# CRDs) — it grants nothing for the Spark Operator's CRDs. SparkKubernetesOperator
+# calls the Kubernetes custom-objects API directly as the airflow-scheduler
+# ServiceAccount, which failed with a 403:
+# "sparkapplications.sparkoperator.k8s.io is forbidden: User
+# system:serviceaccount:churn-service:airflow-scheduler cannot create
+# resource sparkapplications" — confirmed via `airflow tasks test`, which
+# runs the operator synchronously and surfaces the real traceback (the
+# KubernetesExecutor pod route hid this: the pod's own process exits
+# non-zero fast enough that only the DAG-level "failed" status was visible).
+resource "kubernetes_role" "airflow_spark_operator_access" {
+  metadata {
+    name      = "airflow-spark-operator-access"
+    namespace = "churn-service"
+  }
+  rule {
+    api_groups = ["sparkoperator.k8s.io"]
+    resources  = ["sparkapplications", "scheduledsparkapplications"]
+    verbs      = ["get", "list", "watch", "create", "update", "patch", "delete"]
+  }
+}
+
+resource "kubernetes_role_binding" "airflow_spark_operator_access" {
+  metadata {
+    name      = "airflow-spark-operator-access"
+    namespace = "churn-service"
+  }
+  role_ref {
+    api_group = "rbac.authorization.k8s.io"
+    kind      = "Role"
+    name      = kubernetes_role.airflow_spark_operator_access.metadata[0].name
+  }
+  subject {
+    kind      = "ServiceAccount"
+    name      = "airflow-scheduler"
+    namespace = "churn-service"
+  }
+  depends_on = [helm_release.airflow]
 }
