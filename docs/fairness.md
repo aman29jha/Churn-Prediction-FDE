@@ -1,6 +1,6 @@
 # Fairness / Bias Check
 
-*This document describes the methodology. Actual findings (which subgroups, what gaps, if any) get filled in once the model is trained and evaluated against the synthetic dataset.*
+Methodology below; real findings from `scripts/run_training_pipeline.py` against the 1,200-customer synthetic dataset follow at the end (raw output in `reports/fairness.json`).
 
 ## What we slice on
 
@@ -31,3 +31,13 @@ Not "retrain a separate model per segment" — that adds real maintenance burden
 ## What we're explicitly not claiming
 
 This check validates our *methodology* for finding and reasoning about fairness gaps. It does not, and cannot, tell us anything about real disparities in Localytics' actual customer base, because the subgroup labels themselves are invented. The value of doing this well is demonstrating the check is built into the design from the start (per the assignment's own "not bolted on at the end" evaluation criterion), not that the specific numbers generalize.
+
+## Real findings (1,200-customer synthetic dataset, test set n=180, overall FNR = 0.4375)
+
+Sliced on `plan_tier` (3 values), `acquisition_channel` (4 values), `region` (4 values) — 11 subgroups checked in total.
+
+**1 finding flagged**: `region = north_america` — FNR 0.545 vs. overall 0.4375 (absolute gap 10.8 points, just over the 10-point threshold; ratio 1.25x, right at the ratio threshold too). n=51 for this subgroup — on the smaller side, so this should be treated as a signal worth monitoring, not a confident conclusion; at this sample size a single-digit swing in false negatives would move the gap noticeably. `region = latam` shows the opposite pattern (FNR 0.308, better than overall) — consistent with the north_america gap being a real if modest effect rather than pure noise, but not strong enough evidence to be certain given the segment sizes involved.
+
+**No findings** on `plan_tier` or `acquisition_channel` — all FNR ratios stayed within roughly 0.75x-1.15x of the overall rate, well inside the threshold. Notably, `acquisition_channel` was the field we deliberately gave a documented behavioral correlation with engagement archetype (see [modeling.md](modeling.md)) — the model doesn't discriminate against paid-acquisition customers on FNR specifically, even though they're less engaged on average, likely because the model conditions on the actual engagement features (recency, frequency) rather than the channel itself.
+
+**Recommendation given this specific finding**: monitor the `region = north_america` FNR gap on the observability dashboard for a few more scoring cycles before acting — one measurement at n=51 isn't enough to justify a segment-specific threshold adjustment yet. If it persists or widens, the threshold-adjustment approach described above is the next step, not retraining.

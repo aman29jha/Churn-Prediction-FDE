@@ -23,8 +23,21 @@ def load_events(path: str | Path) -> pd.DataFrame:
         raw = json.load(f)
     df = pd.DataFrame(raw)
     df["timestamp"] = pd.to_datetime(df["timestamp"], utc=True)
-    props = pd.json_normalize(df["properties"])
-    return pd.concat([df.drop(columns=["properties"]), props], axis=1)
+    return _ensure_flat(df)
+
+
+def _ensure_flat(events: pd.DataFrame) -> pd.DataFrame:
+    """Idempotent: flattens a `properties` dict column into top-level
+    columns (amount_usd, duration_sec, event_name, campaign_id, category)
+    if present, otherwise assumes the caller already flattened it. Both
+    load_events (real data) and the synthetic generator (src/data_gen)
+    produce the same nested schema, so this lets compute_rfm_features /
+    compute_label accept either without callers needing to remember to
+    flatten first."""
+    if "properties" not in events.columns:
+        return events
+    props = pd.json_normalize(events["properties"])
+    return pd.concat([events.drop(columns=["properties"]).reset_index(drop=True), props.reset_index(drop=True)], axis=1)
 
 
 def _cutoff(as_of: pd.Timestamp, feature_window_days: int) -> pd.Timestamp:
@@ -42,6 +55,7 @@ def compute_rfm_features(
     as_of: pd.Timestamp,
     feature_window_days: int = FEATURE_WINDOW_DAYS_DEFAULT,
 ) -> pd.DataFrame:
+    events = _ensure_flat(events)
     T = _cutoff(as_of, feature_window_days)
     T30 = T - pd.Timedelta(days=SHORT_LOOKBACK_DAYS)
     T90 = T - pd.Timedelta(days=LONG_LOOKBACK_DAYS)

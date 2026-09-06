@@ -1,0 +1,26 @@
+{
+  "baseline":{
+    "pr_auc":0.780688,
+    "recall_at_precision_40":0.979167,
+    "top_decile_capture":0.354167,
+    "f2_at_capacity_threshold":0.570776,
+    "precision_at_capacity_threshold":0.925926,
+    "recall_at_capacity_threshold":0.520833,
+    "brier_score":0.193333,
+    "capacity_threshold_value":0.8,
+    "n":180.0,
+    "positive_rate":0.266667
+  },
+  "xgboost":{
+    "pr_auc":0.938314,
+    "recall_at_precision_40":0.979167,
+    "top_decile_capture":0.375,
+    "f2_at_capacity_threshold":0.616438,
+    "precision_at_capacity_threshold":1.0,
+    "recall_at_capacity_threshold":0.5625,
+    "brier_score":0.060213,
+    "capacity_threshold_value":0.938305,
+    "n":180.0,
+    "positive_rate":0.266667
+  }
+}

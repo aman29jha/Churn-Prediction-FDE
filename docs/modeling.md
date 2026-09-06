@@ -40,7 +40,9 @@ The 60-day threshold was chosen on business reasoning ("gone quiet for two month
 | `add_to_cart_count_90d` * | Count of `in_app_event` where `event_name=add_to_cart` | "Considered a purchase, didn't complete" — provisional, see below |
 | `feature_use_count_90d` * | Count of `in_app_event` where `event_name=feature_use` | The one in_app_event type with any measurable (if weak) correlation in the real sample — provisional |
 
-\* **Provisional.** On the raw 80-row sample, correlation checks for these were noisy and inconclusive (p-values consistent with the multiple-testing problem — testing 10 features at alpha=0.05, 2-3 "significant" hits is what chance alone predicts). We include them because they're cheap and plausible, but the real decision to keep or drop them happens via **SHAP/ablation on the trained model against the ~1,200-customer synthetic dataset**, where the answer is actually trustworthy. `search`, `screen_view`, `share` in_app_event types were excluded outright — no signal and no clear business rationale distinct from what's already captured.
+\* **Resolved** (was provisional). SHAP importance on the trained model against the 1,200-customer synthetic dataset: both `add_to_cart_count_90d` (0.101) and `feature_use_count_90d` (0.099) land in the same tier as `lifetime_revenue`/`purchase_revenue_90d` — modest but real, not the least important features in the model. **Kept.** Full findings in [explainability.md](explainability.md). `search`, `screen_view`, `share` in_app_event types were excluded outright — no signal and no clear business rationale distinct from what's already captured.
+
+**One feature dropped based on real evidence, not guessing**: `has_ever_purchased` showed exactly zero SHAP importance — fully redundant with `purchase_count_90d`/`lifetime_revenue`, which already encode the same information more precisely. Kept in the feature table for now (harmless, zero cost) but flagged as removable.
 
 ## Baseline: classic RFM quintile scoring
 

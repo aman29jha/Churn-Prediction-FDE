@@ -1,6 +1,6 @@
 # Explainability
 
-*This document describes the methodology and output format. Actual findings (which features dominate, example customer explanations) get filled in once the model is trained against the synthetic dataset.*
+Methodology below; real findings from `scripts/run_training_pipeline.py` against the 1,200-customer synthetic dataset follow at the end (raw output in `reports/global_shap_importance.png` and `reports/example_explanation.json`).
 
 ## Why three layers, not just a SHAP plot
 
@@ -39,3 +39,32 @@ The `/score/{customer_id}` API response includes an `explanation` field:
 }
 ```
 This matters because a real campaign tool needs to consume "why" programmatically (e.g. to decide *which* win-back offer to send — a recency-driven risk might get a re-engagement push, a monetary-driven risk might get a discount) — not just render a picture for a human.
+
+## Real findings (1,200-customer synthetic dataset)
+
+**Global importance** (mean |SHAP value| across the test set):
+
+| Feature | Mean \|SHAP\| |
+|---|---|
+| `recency_days` | 3.628 — dominant, by nearly an order of magnitude |
+| `frequency_30d` | 0.456 |
+| `avg_session_duration_90d` | 0.349 |
+| `push_open_rate` | 0.277 |
+| `frequency_90d` | 0.247 |
+| `lifetime_revenue` | 0.127 |
+| `purchase_revenue_90d` | 0.101 |
+| `add_to_cart_count_90d` | 0.101 |
+| `feature_use_count_90d` | 0.099 |
+| `campaign_click_count_90d` | 0.055 |
+| `support_ticket_count_90d` | 0.027 |
+| `purchase_count_90d` | 0.013 |
+| `has_ever_purchased` | 0.000 — completely unused |
+
+**Resolving the two provisional features** (per [modeling.md](modeling.md), these were included on plausibility but their real value was undetermined from the noisy 80-row sample): both `add_to_cart_count_90d` and `feature_use_count_90d` land in the same importance tier as `lifetime_revenue`/`purchase_revenue_90d` — modest but real, not the least important features in the model. **Keep both.**
+
+**A feature to actually drop**: `has_ever_purchased` has exactly zero SHAP importance — the model found it fully redundant with `purchase_count_90d`/`lifetime_revenue`, which already encode the same information more precisely. This is exactly the kind of evidence-based cleanup the design called for (see modeling.md) rather than guessing from a tiny sample.
+
+**Example explanation** (highest-risk customer in the test set, `churn_probability = 0.999`):
+> "This customer's churn risk is elevated mainly because of how long it's been since their last app session and their total spend history."
+
+This is the literal auto-generated plain-language output — recency and lifetime revenue were the top two SHAP-ranked features for this customer, matching the global importance ranking.

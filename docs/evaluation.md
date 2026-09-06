@@ -29,3 +29,21 @@ Stratified **70/15/15 train/val/test** split on the label (churn rate preserved 
 ## Reporting
 
 Baseline (RFM quintile rule, see [modeling.md](modeling.md)) vs. XGBoost model, side-by-side on every metric above, plus a cumulative gains/lift chart — visually answers "random targeting vs. our model" for a non-technical audience, surfaced in the [reviewer console](architecture/06-reviewer-console.md).
+
+## Results (real run — 1,200-customer synthetic dataset, held-out test set, n=180)
+
+Produced by `scripts/run_training_pipeline.py`; raw output in `reports/metrics.json`.
+
+| Metric | Baseline (RFM quintile rule) | XGBoost |
+|---|---|---|
+| PR-AUC | 0.781 | **0.938** |
+| Recall @ precision ≥ 40% | 0.979 | 0.979 |
+| Top-decile capture | 0.354 | **0.375** |
+| F2 @ capacity threshold (top 15%) | 0.571 | **0.616** |
+| Precision @ capacity threshold | 0.926 | **1.000** |
+| Recall @ capacity threshold | 0.521 | **0.563** |
+| Brier score | 0.193 | **0.060** |
+
+XGBoost beats the baseline on every metric except recall-at-fixed-precision, where they tie — both models can reach very high recall if precision is allowed to drop to 40%, which isn't surprising given the churn base rate (26.9%) isn't extreme. The metrics that actually reflect the operating constraint (fixed 15% campaign capacity) — precision/recall/F2 at that threshold, plus PR-AUC and calibration — show a clear, consistent improvement.
+
+**A real bug found and fixed while producing these numbers**: the baseline's combined RFM score only takes ~13 distinct integer values (range 3-15). A naive "select everyone scoring ≥ the 85th-percentile threshold" over-selected to ~30% of customers instead of the intended 15%, because so many customers tied at the threshold value. Fixed by selecting exactly the top-N by rank (`capacity_selection_mask` in `src/modeling/evaluate.py`) regardless of ties, so the baseline and XGBoost are compared at a genuinely fixed, equal budget — otherwise the baseline's numbers would have looked artificially strong from simply contacting twice as many customers.
