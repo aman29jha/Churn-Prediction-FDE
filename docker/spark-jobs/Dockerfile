@@ -45,11 +45,23 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY src/ src/
 COPY scripts/spark_job_entrypoint.py scripts/spark_job_entrypoint.py
 
-# spark.sql.session.timeZone=UTC is critical — see docs/architecture/01-data-platform.md
-# ("local[*] validation before this ever touches a cluster") for the bug
-# this caught during local testing.
 ENV PYTHONPATH=/app
-ENTRYPOINT ["/opt/spark/bin/spark-submit", \
-  "--conf", "spark.sql.session.timeZone=UTC", \
-  "--conf", "spark.sql.extensions=org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions", \
-  "/app/scripts/spark_job_entrypoint.py"]
+
+# Deliberately NOT overriding ENTRYPOINT/CMD here — real bug found by
+# actually running this as a SparkApplication driver pod, not just
+# locally: Spark Operator/Spark's own K8s cluster manager relies on the
+# base apache/spark-py image's /opt/entrypoint.sh, which dispatches on a
+# first positional arg of "driver" or "executor" (its own internal
+# spark-submit invocation contract) — see that script's `case "$1" in
+# driver) ... executor) ...` block. A custom ENTRYPOINT here hardcoding
+# our own spark-submit call intercepts that "driver"/"executor" argument
+# instead of passing it through, so it landed in spark_job_entrypoint.py's
+# own argparse as the `job` positional: `error: argument job: invalid
+# choice: 'driver'`. The two --conf flags this ENTRYPOINT used to carry
+# (spark.sql.session.timeZone=UTC, spark.sql.extensions=...Iceberg...)
+# moved to sparkConf in airflow/dags/specs/*.yaml instead — spark-submit
+# reads sparkConf via spark-defaults regardless of who invokes it.
+# For local (non-K8s) runs, invoke spark-submit explicitly, e.g.:
+#   docker run ... spark-submit --conf spark.sql.session.timeZone=UTC \
+#     --conf spark.sql.extensions=org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions \
+#     /app/scripts/spark_job_entrypoint.py silver --input ... --output ...
