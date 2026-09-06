@@ -1,0 +1,10 @@
+NAME                                         READY   STATUS    RESTARTS   AGE    IP            NODE                                                 NOMINATED NODE   READINESS GATES
+airflow-scheduler-86cbdcf5c-2nb76            3/3     Running   0          59m    10.42.2.63    fargate-ip-10-42-2-63.ap-south-1.compute.internal    <none>           <none>
+airflow-statsd-6859685749-cnxpx              1/1     Running   0          148m   10.42.3.245   fargate-ip-10-42-3-245.ap-south-1.compute.internal   <none>           <none>
+airflow-webserver-587bc9dd9b-qm7zt           1/1     Running   0          129m   10.42.2.240   fargate-ip-10-42-2-240.ap-south-1.compute.internal   <none>           <none>
+api-service-76f79485b6-svzpm                 1/1     Running   0          76m    10.42.3.223   fargate-ip-10-42-3-223.ap-south-1.compute.internal   <none>           <none>
+console-6cb474cf97-jqcxt                     1/1     Running   0          76m    10.42.3.234   fargate-ip-10-42-3-234.ap-south-1.compute.internal   <none>           <none>
+spark-history-server-55cbf4d58c-nxxmw        1/1     Running   0          76m    10.42.3.13    fargate-ip-10-42-3-13.ap-south-1.compute.internal    <none>           <none>
+spark-operator-controller-86586cff98-2v48s   1/1     Running   0          132m   10.42.2.223   fargate-ip-10-42-2-223.ap-south-1.compute.internal   <none>           <none>
+spark-operator-webhook-75fd89c7f5-5dctc      1/1     Running   0          132m   10.42.3.193   fargate-ip-10-42-3-193.ap-south-1.compute.internal   <none>           <none>
+No resources found in churn-service namespace.

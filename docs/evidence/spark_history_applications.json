@@ -1,0 +1,61 @@
+[ {
+  "id" : "local-1788733178280",
+  "name" : "gold-job",
+  "attempts" : [ {
+    "startTime" : "2026-09-06T22:19:37.584GMT",
+    "endTime" : "2026-09-06T22:19:55.352GMT",
+    "lastUpdated" : "2026-09-06T22:19:56.000GMT",
+    "duration" : 17768,
+    "sparkUser" : "spark",
+    "completed" : true,
+    "appSparkVersion" : "3.4.0",
+    "startTimeEpoch" : 1788733177584,
+    "endTimeEpoch" : 1788733195352,
+    "lastUpdatedEpoch" : 1788733196000
+  } ]
+}, {
+  "id" : "local-1788732830155",
+  "name" : "silver-job",
+  "attempts" : [ {
+    "startTime" : "2026-09-06T22:13:49.458GMT",
+    "endTime" : "2026-09-06T22:14:05.961GMT",
+    "lastUpdated" : "2026-09-06T22:14:07.000GMT",
+    "duration" : 16503,
+    "sparkUser" : "spark",
+    "completed" : true,
+    "appSparkVersion" : "3.4.0",
+    "startTimeEpoch" : 1788732829458,
+    "endTimeEpoch" : 1788732845961,
+    "lastUpdatedEpoch" : 1788732847000
+  } ]
+}, {
+  "id" : "local-1788731981793",
+  "name" : "silver-job",
+  "attempts" : [ {
+    "startTime" : "2026-09-06T21:59:41.105GMT",
+    "endTime" : "2026-09-06T21:59:56.983GMT",
+    "lastUpdated" : "2026-09-06T21:59:58.000GMT",
+    "duration" : 15878,
+    "sparkUser" : "spark",
+    "completed" : true,
+    "appSparkVersion" : "3.4.0",
+    "startTimeEpoch" : 1788731981105,
+    "endTimeEpoch" : 1788731996983,
+    "lastUpdatedEpoch" : 1788731998000
+  } ]
+}, {
+  "id" : "local-1788729423330",
+  "name" : "silver-job",
+  "attempts" : [ {
+    "startTime" : "2026-09-06T21:17:02.550GMT",
+    "endTime" : "2026-09-06T21:17:19.558GMT",
+    "lastUpdated" : "2026-09-06T21:17:20.000GMT",
+    "duration" : 17008,
+    "sparkUser" : "spark",
+    "completed" : true,
+    "appSparkVersion" : "3.4.0",
+    "startTimeEpoch" : 1788729422550,
+    "endTimeEpoch" : 1788729439558,
+    "lastUpdatedEpoch" : 1788729440000
+  } ]
+} ]

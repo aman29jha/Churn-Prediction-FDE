@@ -16,3 +16,4 @@ models/
 .docker_scratch/
 *.zip
 terraform.tfvars.sandbox
+infra/terraform/tfplan*.out
