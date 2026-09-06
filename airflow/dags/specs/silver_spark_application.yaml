@@ -33,10 +33,15 @@ spec:
     type: OnFailure
     onFailureRetries: 2
     onFailureRetryInterval: 30
+  # labels is REQUIRED here (even empty) — see gold/analytics specs for why:
+  # the Airflow SparkKubernetesOperator crashes with KeyError: 'labels'
+  # without it.
   driver:
     cores: 1
     memory: "1g"
     serviceAccount: spark-jobs
+    labels:
+      app: silver-transform
     nodeSelector:
       workload-type: spark-driver
     tolerations:
@@ -48,6 +53,8 @@ spec:
     cores: 1
     instances: 1
     memory: "1g"
+    labels:
+      app: silver-transform
     nodeSelector:
       workload-type: spark-executor
     tolerations:

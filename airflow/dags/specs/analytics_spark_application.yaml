@@ -27,10 +27,19 @@ spec:
   restartPolicy:
     type: OnFailure
     onFailureRetries: 1
+  # labels is REQUIRED here (even empty) — not a Spark Operator requirement,
+  # but the Airflow provider's SparkKubernetesOperator/custom_object_launcher
+  # reads spec.driver.labels directly off the create-CR API response to build
+  # its own driver-pod watcher; a manifest without this key crashes with
+  # `KeyError: 'labels'` right after CR creation (found by running
+  # `airflow tasks test` synchronously — the KubernetesExecutor pod route
+  # hid this behind a fast non-zero exit with no visible traceback).
   driver:
     cores: 1
     memory: "1g"
     serviceAccount: spark-jobs
+    labels:
+      app: analytics-transform
     nodeSelector:
       workload-type: spark-driver
     tolerations:
@@ -42,6 +51,8 @@ spec:
     cores: 1
     instances: 1
     memory: "1g"
+    labels:
+      app: analytics-transform
     nodeSelector:
       workload-type: spark-executor
     tolerations:
