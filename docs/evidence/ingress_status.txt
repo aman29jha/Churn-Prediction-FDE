@@ -1,0 +1,2 @@
+NAME                    CLASS    HOSTS   ADDRESS                                                                   PORTS   AGE
+churn-service-ingress   <none>   *       k8s-churnser-churnser-e794a12669-938076162.ap-south-1.elb.amazonaws.com   80      129m

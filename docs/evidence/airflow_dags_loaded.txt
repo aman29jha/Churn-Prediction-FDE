@@ -1,0 +1,7 @@
+dag_id                 | fileloc                                                       | owners  | is_paused
+=======================+===============================================================+=========+==========
+analytics_dag          | /opt/airflow/dags/repo/airflow/dags/analytics_dag.py          | airflow | True     
+live_simulator_dag     | /opt/airflow/dags/repo/airflow/dags/live_simulator_dag.py     | airflow | True     
+medallion_pipeline_dag | /opt/airflow/dags/repo/airflow/dags/medallion_pipeline_dag.py | airflow | True     
+training_dag           | /opt/airflow/dags/repo/airflow/dags/training_dag.py           | airflow | True     
+                                                                                                            

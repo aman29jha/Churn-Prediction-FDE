@@ -313,9 +313,40 @@ resource "helm_release" "airflow" {
     executor = "KubernetesExecutor"
     scheduler = {
       replicas = 1 # minimal/lite — no HA, sized for a demo not production scale
+      # Real finding: the chart's default startupProbe only allows 60s
+      # (6 * 10s) for the container to start listening — Fargate's cold
+      # start + gunicorn/scheduler boot time exceeds that here, causing
+      # the kubelet to kill and restart the pod in a loop before it ever
+      # gets a chance to finish starting. Widened to a 5-minute budget.
+      startupProbe = {
+        failureThreshold = 30
+        periodSeconds    = 10
+        timeoutSeconds   = 20
+      }
+      # Second, deeper real finding: this chart sets NO resource requests
+      # by default. On Fargate (unlike a normal EC2 node with idle burst
+      # capacity to spare), no request means the kubelet gives the pod a
+      # minimal CPU share, which throttled gunicorn/Flask-AppBuilder's
+      # cold-start RBAC table setup badly enough that it never finished
+      # booting before even the widened startup probe timeout. Confirmed
+      # via `kubectl get pod ... -o jsonpath='{.spec.containers[0].resources}'`
+      # returning literally `{}` before this fix.
+      resources = {
+        requests = { cpu = "500m", memory = "1Gi" }
+        limits   = { cpu = "1", memory = "2Gi" }
+      }
     }
     webserver = {
       replicas = 1
+      startupProbe = {
+        failureThreshold = 30
+        periodSeconds    = 10
+        timeoutSeconds   = 20
+      }
+      resources = {
+        requests = { cpu = "500m", memory = "1Gi" }
+        limits   = { cpu = "1", memory = "2Gi" }
+      }
     }
     postgresql = {
       enabled = false # RDS instead — see modules/database and the kubernetes_secret above
@@ -325,6 +356,18 @@ resource "helm_release" "airflow" {
     }
     redis = {
       enabled = false # not needed: KubernetesExecutor doesn't use the Celery/Redis queue
+    }
+    triggerer = {
+      # Real finding from actually deploying: this chart version's
+      # Triggerer StatefulSet has an UNCONDITIONAL volumeClaimTemplate
+      # for its logs (ignores logs.persistence.enabled=false), which is
+      # EBS-backed and can't attach on Fargate — the pod sat Pending
+      # forever (same root cause as the postgresql subchart, different
+      # component). Disabled outright rather than fighting the chart's
+      # PVC template: our DAGs use SparkKubernetesOperator and
+      # KubernetesPodOperator, neither of which are deferrable operators
+      # that would need the Triggerer.
+      enabled = false
     }
     dags = {
       gitSync = {

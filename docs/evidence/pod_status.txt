@@ -1,0 +1,8 @@
+NAME                                         READY   STATUS    RESTARTS   AGE     IP            NODE                                                 NOMINATED NODE   READINESS GATES
+airflow-scheduler-59dc4ff7c5-k7r5t           3/3     Running   0          138m    10.42.3.168   fargate-ip-10-42-3-168.ap-south-1.compute.internal   <none>           <none>
+airflow-statsd-b45f54fb4-7jj2k               1/1     Running   0          138m    10.42.3.20    fargate-ip-10-42-3-20.ap-south-1.compute.internal    <none>           <none>
+airflow-webserver-74d8bfc974-lzgwt           1/1     Running   0          138m    10.42.2.51    fargate-ip-10-42-2-51.ap-south-1.compute.internal    <none>           <none>
+api-service-84756f89cb-c72vg                 1/1     Running   0          4m34s   10.42.2.84    fargate-ip-10-42-2-84.ap-south-1.compute.internal    <none>           <none>
+console-8464847669-5wf6h                     1/1     Running   0          4m34s   10.42.3.189   fargate-ip-10-42-3-189.ap-south-1.compute.internal   <none>           <none>
+spark-operator-controller-6f4d4dc75d-2rmwr   1/1     Running   0          3h25m   10.42.2.28    fargate-ip-10-42-2-28.ap-south-1.compute.internal    <none>           <none>
+spark-operator-webhook-c9957dd99-58xs9       1/1     Running   0          3h25m   10.42.2.167   fargate-ip-10-42-2-167.ap-south-1.compute.internal   <none>           <none>

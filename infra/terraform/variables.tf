@@ -28,8 +28,9 @@ variable "availability_zone_count" {
 }
 
 variable "eks_cluster_version" {
-  type    = string
-  default = "1.30"
+  description = "Real finding: the cluster came up as 1.31 despite this being set to 1.30 at creation time (AWS likely didn't have 1.30 available in ap-south-1 at that moment, or auto-selected the nearest supported version) — Terraform's state recorded our requested 1.30, so later applies tried to 'correct' the live 1.31 cluster back to 1.30, which EKS refused (`InvalidParameterException: Cluster is not eligible for rollback`). Aligned to the actual running version rather than forcing a real version-change API call."
+  type        = string
+  default     = "1.31"
 }
 
 variable "budget_alarm_email" {
@@ -63,7 +64,7 @@ variable "dags_git_repo" {
 }
 
 variable "image_tag" {
-  description = "Git-SHA-based tag for the 3 Docker images already pushed to ECR (see docs/architecture/08-infrastructure.md)."
+  description = "Git-SHA-based tag for the 3 Docker images already pushed to ECR (see docs/architecture/08-infrastructure.md). Suffixed -amd64: the first push (sha-83887be) was built natively on Apple Silicon (arm64) and crashed on Fargate's amd64 nodes with 'exec format error' — rebuilt with `docker buildx build --platform linux/amd64` and pushed under this new tag (ECR is IMMUTABLE tag mutability, so the original tag couldn't be overwritten)."
   type        = string
-  default     = "sha-83887be"
+  default     = "sha-83887be-amd64"
 }
