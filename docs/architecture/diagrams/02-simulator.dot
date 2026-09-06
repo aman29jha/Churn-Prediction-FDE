@@ -1,0 +1,29 @@
+digraph Simulator {
+  rankdir=TB;
+  graph [fontname="Helvetica", fontsize=11, bgcolor="white", pad=0.3];
+  node [fontname="Helvetica", fontsize=10, shape=box, style="rounded,filled", margin="0.2,0.12"];
+  edge [fontname="Helvetica", fontsize=9, color="#555555"];
+
+  subgraph cluster_eks {
+    label="EKS Cluster"; style="rounded"; color="#888888";
+    CRON [label="CronJob: live-event-simulator\nschedule: */10 * * * *\nsuspend: true/false (toggle)", fillcolor="#e8daef"];
+    API [label="Scoring Service (FastAPI)\nroutes: /score, /events/ingest", fillcolor="#d6eaf8"];
+  }
+
+  REG [label="S3: sim-state/customer_registry.json\ncustomer_id, archetype, last_state", shape=cylinder, fillcolor="#fdebd0"];
+  SECRET [label="K8s Secret\ningest bearer token", shape=note, fillcolor="#fadbd8"];
+  RAW [label="S3: raw/incoming/date=.../hour=...\n(partitioned for Athena)", shape=cylinder, fillcolor="#cd7f32", fontcolor="white"];
+  CW [label="CloudWatch\nlogs + latency/error/throughput", fillcolor="#f5eef8"];
+  FEAT [label="Feature (Silver/Gold) pipeline\npicks up on next scheduled run", fillcolor="#bdc3c7"];
+
+  CRON -> REG [label="1. read, pick N customers\nweighted by archetype"];
+  SECRET -> CRON [label="3. inject bearer token"];
+  CRON -> API [label="4. POST batch\n(auth + rate-limited)"];
+  API -> RAW [label="6. append validated batch"];
+  API -> CW [label="7. emit request metrics"];
+  RAW -> FEAT;
+
+  BOOT [label="Bootstrap Generator\n(one-time, writes registry + initial Bronze load)", fillcolor="#e8daef"];
+  BOOT -> REG [label="writes"];
+  BOOT -> RAW [label="writes"];
+}

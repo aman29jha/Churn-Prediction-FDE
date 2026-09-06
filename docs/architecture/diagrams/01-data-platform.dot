@@ -1,0 +1,63 @@
+digraph DataPlatform {
+  rankdir=TB;
+  graph [fontname="Helvetica", fontsize=11, bgcolor="white", pad=0.3];
+  node [fontname="Helvetica", fontsize=10, shape=box, style="rounded,filled", margin="0.2,0.12"];
+  edge [fontname="Helvetica", fontsize=9, color="#555555"];
+
+  subgraph cluster_eks {
+    label="EKS"; style="rounded"; color="#888888";
+
+    subgraph cluster_karpenter {
+      label="Karpenter-managed EC2 NodePools\n(spark-submit --master k8s://...)"; style="rounded"; color="#aaaaaa";
+      NP_OD [label="NodePool: on-demand\n(Spark drivers)", shape=component, fillcolor="#f5b7b1"];
+      NP_SPOT [label="NodePool: spot\n(Spark executors)", shape=component, fillcolor="#a9dfbf"];
+      SILVERJOB [label="Silver Spark Job\ndriver (on-demand) +\n1-2 executors (spot)", fillcolor="#bdc3c7"];
+      GOLDJOB [label="Gold Spark Job\nRFM+extras, apply model,\nRFM quintile segments\ndriver (on-demand) + executors (spot)", fillcolor="#f1c40f"];
+      COMPACTJOB [label="Compaction Spark Job\nrewrite_data_files\nexpire_snapshots\ndriver (on-demand) + executors (spot)", fillcolor="#f8c471"];
+      NP_OD -> SILVERJOB [style=dotted, label="driver pod"];
+      NP_SPOT -> SILVERJOB [style=dotted, label="executor pods"];
+    }
+
+    subgraph cluster_fargate {
+      label="Fargate profile\n(steady lightweight services)"; style="rounded"; color="#aaaaaa";
+      HIST [label="Spark History Server\n(always-on Deployment)", fillcolor="#f5eef8"];
+    }
+  }
+
+  IMG [label="docker/spark-jobs image\n(PySpark + Iceberg jars)\n-> ECR", shape=cylinder, fillcolor="#e8daef"];
+
+  BRONZE [label="Bronze\nbronze.events\n(raw, append-only)", fillcolor="#cd7f32", fontcolor="white"];
+  SILVER [label="Silver\nsilver.events\n(deduped, validated,\ntyped)", fillcolor="#bdc3c7"];
+  GOLD_F [label="Gold: rfm_features", fillcolor="#f1c40f"];
+  GOLD_S [label="Gold: rfm_segments\n(quintile baseline)", fillcolor="#f1c40f"];
+  GOLD_C [label="Gold: churn_scores", fillcolor="#f1c40f"];
+
+  GLUE [label="AWS Glue Data Catalog", shape=component, fillcolor="#d6eaf8"];
+  ATHENA [label="Athena", fillcolor="#d6eaf8"];
+  EVENTLOG [label="S3: spark-events/\n(event logs)", shape=cylinder, fillcolor="#f5eef8"];
+
+  IMG -> SILVERJOB;
+  IMG -> GOLDJOB;
+  IMG -> COMPACTJOB;
+  IMG -> HIST;
+
+  BRONZE -> SILVERJOB [label="dedup by event_id,\nvalidate, standardize"];
+  SILVERJOB -> SILVER;
+  SILVER -> GOLDJOB [label="RFM window calc\ncutoff T = as_of-60d"];
+  GOLDJOB -> GOLD_F;
+  GOLDJOB -> GOLD_S;
+  GOLDJOB -> GOLD_C;
+
+  COMPACTJOB -> BRONZE [style=dashed, dir=back];
+  COMPACTJOB -> SILVER [style=dashed, dir=back];
+  COMPACTJOB -> GOLD_F [style=dashed, dir=back];
+
+  BRONZE -> GLUE [style=dotted];
+  SILVER -> GLUE [style=dotted];
+  GOLD_F -> GLUE [style=dotted];
+  GLUE -> ATHENA;
+
+  SILVERJOB -> EVENTLOG [style=dotted];
+  GOLDJOB -> EVENTLOG [style=dotted];
+  EVENTLOG -> HIST;
+}

@@ -1,0 +1,37 @@
+digraph Observability {
+  rankdir=TB;
+  graph [fontname="Helvetica", fontsize=11, bgcolor="white", pad=0.3];
+  node [fontname="Helvetica", fontsize=10, shape=box, style="rounded,filled", margin="0.2,0.12"];
+  edge [fontname="Helvetica", fontsize=9, color="#555555"];
+
+  subgraph cluster_sources {
+    label="Sources"; style="rounded"; color="#888888";
+    API [label="FastAPI\n(scoring + ingest)", fillcolor="#d6eaf8"];
+    SPARK [label="Spark Jobs\n(Silver/Gold/Compaction)", fillcolor="#bdc3c7"];
+    SIM [label="Live Simulator", fillcolor="#e8daef"];
+  }
+
+  FLUENT [label="Fluent Bit DaemonSet\n(EKS standard logging path)", fillcolor="#f5eef8"];
+  EMF [label="aws-embedded-metrics\n(EMF custom metrics)", fillcolor="#f5eef8"];
+  XRAY [label="AWS X-Ray SDK\n(request tracing)", fillcolor="#f5eef8"];
+
+  LOGS [label="CloudWatch Logs\n/eks/churn-service/api\n/eks/churn-service/spark-gold\n...", shape=cylinder, fillcolor="#2e86c1", fontcolor="white"];
+  METRICS [label="CloudWatch Metrics\n(latency, error rate, throughput,\njob success/failure, EKS Container Insights)", shape=cylinder, fillcolor="#2e86c1", fontcolor="white"];
+  TRACES [label="X-Ray Trace Map\n(per-hop latency breakdown)", shape=cylinder, fillcolor="#2e86c1", fontcolor="white"];
+
+  DASH [label="CloudWatch Dashboard\n(single pane)", shape=box3d, fillcolor="#d5f5e3"];
+  ALARM [label="CloudWatch Alarms\nerror-rate spike, job failure,\nbilling threshold", shape=octagon, fillcolor="#f5b7b1"];
+  HIST [label="Spark History Server\n(job DAGs, stage timings)", fillcolor="#f5eef8"];
+
+  API -> FLUENT; SPARK -> FLUENT; SIM -> FLUENT;
+  FLUENT -> LOGS;
+  API -> EMF -> METRICS;
+  SPARK -> METRICS [label="job duration/status\nmetric at completion"];
+  API -> XRAY -> TRACES;
+
+  LOGS -> DASH; METRICS -> DASH; TRACES -> DASH; HIST -> DASH;
+  METRICS -> ALARM;
+
+  RETENTION [label="Retention policy:\n7-14 days on every log group\n(avoids silent cost leak)", shape=note, fillcolor="#fdebd0"];
+  RETENTION -> LOGS [style=dashed];
+}

@@ -1,0 +1,27 @@
+digraph Serving {
+  rankdir=LR;
+  graph [fontname="Helvetica", fontsize=11, bgcolor="white", pad=0.3];
+  node [fontname="Helvetica", fontsize=10, shape=box, style="rounded,filled", margin="0.2,0.12"];
+  edge [fontname="Helvetica", fontsize=9, color="#555555"];
+
+  CLIENT [label="Reviewer Console /\nCampaign tooling", shape=ellipse, fillcolor="#aed6f1"];
+  ING [label="Ingress (ALB/nginx)\nTLS termination", fillcolor="#fadbd8"];
+
+  subgraph cluster_eks {
+    label="EKS Fargate"; style="rounded"; color="#888888";
+    AUTH [label="Auth middleware\n(bearer token / service-to-service)", fillcolor="#f5eef8"];
+    RATE [label="Rate limiter\n(token bucket)", fillcolor="#f5eef8"];
+    API [label="FastAPI\n/score/{customer_id}\n/events/ingest", fillcolor="#d6eaf8"];
+  }
+
+  DDB [label="DynamoDB\ncustomer_scores\n(operational, O(1) lookup)", shape=cylinder, fillcolor="#2e86c1", fontcolor="white"];
+  ATHENA [label="Athena / Iceberg Gold\n(analytical, ad-hoc queries)", shape=cylinder, fillcolor="#d6eaf8"];
+  S3MODEL [label="S3 Model Registry\n(SHAP explainer + XGBoost model)", shape=cylinder, fillcolor="#fdebd0"];
+  XRAY [label="AWS X-Ray\n(per-hop trace)", fillcolor="#f5eef8"];
+
+  CLIENT -> ING -> AUTH -> RATE -> API;
+  API -> DDB [label="fast path:\nlatest score lookup"];
+  API -> S3MODEL [label="cold path:\non-the-fly compute\nif not cached"];
+  API -> XRAY [style=dotted];
+  CLIENT -> ATHENA [label="bulk / dashboard\nqueries (bypass API)", style=dashed];
+}

@@ -1,0 +1,29 @@
+digraph ReviewerConsole {
+  rankdir=LR;
+  graph [fontname="Helvetica", fontsize=11, bgcolor="white", pad=0.3];
+  node [fontname="Helvetica", fontsize=10, shape=box, style="rounded,filled", margin="0.2,0.12"];
+  edge [fontname="Helvetica", fontsize=9, color="#555555"];
+
+  REVIEWER [label="Reviewer\n(browser)", shape=ellipse, fillcolor="#aed6f1"];
+  ING [label="Ingress\nHTTP Basic Auth\n(K8s Secret: htpasswd)", fillcolor="#fadbd8"];
+  CONSOLE [label="Streamlit Reviewer Console\n(EKS Deployment + Service)", shape=box3d, fillcolor="#d6eaf8"];
+
+  ARCH [label="Architecture diagrams\n+ written walkthrough", fillcolor="#f5eef8"];
+  METRICS [label="Model dashboard\nbaseline vs XGBoost,\nlift chart, calibration", fillcolor="#f5eef8"];
+  EXPLAIN [label="Explainability\nSHAP summary + per-customer", fillcolor="#f5eef8"];
+  FAIR [label="Fairness report\nsubgroup metrics + gaps", fillcolor="#f5eef8"];
+  SEGMENTS [label="RFM segment breakdown", fillcolor="#f5eef8"];
+  LOOKUP [label="Live lookup box\ncustomer_id -> score + SHAP", fillcolor="#f1c40f"];
+
+  API2 [label="FastAPI /score\n(real deployed service)", fillcolor="#d6eaf8"];
+  HIST [label="Spark History Server\n(link out)"];
+  CW [label="CloudWatch Dashboard\n(link out)"];
+  EVIDENCE [label="docs/evidence/\nscreenshots (fallback if\nAWS access lapses)", shape=note, fillcolor="#fdebd0"];
+
+  REVIEWER -> ING -> CONSOLE;
+  CONSOLE -> ARCH; CONSOLE -> METRICS; CONSOLE -> EXPLAIN; CONSOLE -> FAIR; CONSOLE -> SEGMENTS; CONSOLE -> LOOKUP;
+  LOOKUP -> API2 [label="live call,\nproves service works"];
+  CONSOLE -> HIST [style=dashed];
+  CONSOLE -> CW [style=dashed];
+  CONSOLE -> EVIDENCE [style=dotted, label="captured separately"];
+}

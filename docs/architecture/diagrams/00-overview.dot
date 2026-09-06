@@ -1,0 +1,77 @@
+digraph Overview {
+  rankdir=LR;
+  graph [fontname="Helvetica", fontsize=11, bgcolor="white", pad=0.3];
+  node [fontname="Helvetica", fontsize=10, shape=box, style="rounded,filled", margin="0.2,0.12"];
+  edge [fontname="Helvetica", fontsize=9, color="#555555"];
+
+  subgraph cluster_ingest {
+    label="Ingestion"; style="rounded"; color="#888888";
+    SIM [label="Live Simulator\n(CronJob)", fillcolor="#e8daef"];
+    BOOT [label="Bootstrap Generator\n(one-time, local)", fillcolor="#e8daef"];
+    API [label="FastAPI Service\n/events/ingest", fillcolor="#d6eaf8"];
+  }
+
+  subgraph cluster_lake {
+    label="Data Lake (Iceberg on S3, Glue Catalog)"; style="rounded"; color="#888888";
+    BRONZE [label="Bronze\nbronze.events", fillcolor="#cd7f32", fontcolor="white"];
+    SILVER [label="Silver\nsilver.events", fillcolor="#bdc3c7"];
+    GOLD [label="Gold\nrfm_features / churn_scores / rfm_segments", fillcolor="#f1c40f"];
+  }
+
+  subgraph cluster_orch {
+    label="Orchestration (Airflow on EKS)"; style="rounded"; color="#888888";
+    DAG1 [label="medallion_pipeline_dag\nSilver -> Gold", fillcolor="#d5f5e3"];
+    DAG2 [label="compaction_dag\n(independent schedule)", fillcolor="#d5f5e3"];
+    DAG3 [label="training_dag\n(manual / infrequent)", fillcolor="#d5f5e3"];
+  }
+
+  subgraph cluster_serve {
+    label="Serving"; style="rounded"; color="#888888";
+    DDB [label="DynamoDB\ncustomer_scores", fillcolor="#d6eaf8"];
+    ATHENA [label="Athena\n(via Glue Catalog)", fillcolor="#d6eaf8"];
+    API2 [label="FastAPI\n/score/{customer_id}", fillcolor="#d6eaf8"];
+    ING [label="Ingress (ALB/nginx)", fillcolor="#fadbd8"];
+  }
+
+  subgraph cluster_model {
+    label="Modeling"; style="rounded"; color="#888888";
+    TRAIN [label="Training\nXGBoost + SHAP\n(plain Python)", fillcolor="#fdebd0"];
+    S3MODEL [label="S3 Model Registry", fillcolor="#fdebd0"];
+  }
+
+  subgraph cluster_obs {
+    label="Observability"; style="rounded"; color="#888888";
+    CW [label="CloudWatch\nLogs + EMF metrics", fillcolor="#f5eef8"];
+    XRAY [label="AWS X-Ray", fillcolor="#f5eef8"];
+    HIST [label="Spark History Server", fillcolor="#f5eef8"];
+  }
+
+  CONSOLE [label="Streamlit Reviewer Console\n(Basic Auth)", shape=box3d, fillcolor="#aed6f1"];
+
+  SIM -> API [label="POST batch"];
+  BOOT -> BRONZE [label="direct load"];
+  API -> BRONZE [label="direct append"];
+  BRONZE -> DAG1;
+  DAG1 -> SILVER [label="Spark job"];
+  SILVER -> DAG1;
+  DAG1 -> GOLD [label="Spark job"];
+  GOLD -> DDB;
+  GOLD -> ATHENA;
+  DAG2 -> BRONZE [style=dashed, label="rewrite_data_files"];
+  DAG2 -> SILVER [style=dashed];
+  DAG2 -> GOLD [style=dashed];
+  DAG3 -> GOLD [label="reads"];
+  DAG3 -> TRAIN;
+  TRAIN -> S3MODEL;
+  S3MODEL -> API2;
+  DDB -> API2;
+  API2 -> ING;
+  API -> CW [style=dotted];
+  API2 -> CW [style=dotted];
+  API2 -> XRAY [style=dotted];
+  DAG1 -> HIST [style=dotted];
+  CONSOLE -> API2;
+  CONSOLE -> ATHENA;
+  CONSOLE -> HIST;
+  CONSOLE -> CW;
+}

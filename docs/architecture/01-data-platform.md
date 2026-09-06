@@ -1,0 +1,73 @@
+# Data Platform — Medallion Architecture, Iceberg, Spark-on-K8s
+
+![Data platform architecture](diagrams/01-data-platform.svg)
+
+## Why medallion + Iceberg
+
+Raw events arrive continuously (bootstrap history + live trickle) and need progressively cleaner, more aggregated representations before they're usable for scoring or dashboards. Medallion layering (Bronze -> Silver -> Gold) gives each stage a single clear responsibility, and Apache Iceberg gives us schema evolution, ACID merges, and time travel on top of plain S3/Parquet — all cheap (Glue Catalog costs are negligible at this scale) and standard for a modern lakehouse.
+
+## Layers
+
+### Bronze — `bronze.events`
+Raw landed events, append-only, one row per event exactly as received (event_id, customer_id, event_type, timestamp, properties as a struct/JSON string). Written directly by:
+- The bootstrap generator (one-time historical load, via `aws s3 cp` / a direct Iceberg append from a local script)
+- The `/events/ingest` API endpoint (live trickle), via a lightweight Python Iceberg writer — no Spark needed for a simple append, keeps ingest latency low.
+
+No transformation happens here beyond schema enforcement — Bronze is a faithful copy of what arrived.
+
+### Silver — `silver.events` (Spark job)
+Cleaned, deduplicated, validated, schema-conformed:
+- Dedup by `event_id` (the live trickle or a retried ingest could produce duplicates)
+- Validate `event_type` against the known enum (session, purchase, push_sent, push_open, campaign_click, in_app_event, support_ticket); drop/quarantine anything else
+- Standardize timestamp to UTC, parse `properties` into typed columns per event_type rather than a loose JSON blob
+- Runs as a Spark job (`spark-submit --master k8s://...`), triggered by the Airflow `medallion_pipeline_dag` after Bronze has new data
+
+### Gold — `rfm_features`, `churn_scores`, `rfm_segments` (Spark job)
+Business-level, customer-grained tables:
+
+**`gold.rfm_features`** — one row per customer per scoring run, computed only from Silver events with `timestamp <= T` (T = as_of − 60 days, our leakage-safe feature cutoff):
+
+| Feature | Definition |
+|---|---|
+| `recency_days` | Days between T and the customer's last `session` before T |
+| `frequency_30d` | Count of `session` events in (T−30d, T] |
+| `frequency_90d` | Count of `session` events in (T−90d, T] |
+| `purchase_count_90d` | Count of `purchase` events in (T−90d, T] |
+| `purchase_revenue_90d` | Sum of `amount_usd` in (T−90d, T] |
+| `lifetime_revenue` | Sum of all `purchase` amounts before T (monetary sparsity backup — most 90d windows are zero) |
+| `has_ever_purchased` | Boolean, before T |
+| `push_open_rate` | Lifetime `push_open` / `push_sent` before T (0 if never sent) |
+| `campaign_click_count_90d` | Count of `campaign_click` in (T−90d, T] |
+| `support_ticket_count_90d` | Count of `support_ticket` in (T−90d, T] |
+| `avg_session_duration_90d` | Mean `duration_sec` of sessions in (T−90d, T] |
+| `add_to_cart_count_90d` * | Count of `in_app_event` where `event_name = add_to_cart`, (T−90d, T] |
+| `feature_use_count_90d` * | Count of `in_app_event` where `event_name = feature_use`, (T−90d, T] |
+
+\* provisional — confirmed or dropped via SHAP/ablation once the model is trained on the synthetic-scale dataset (the raw 80-row sample was too noisy to decide this from correlation alone).
+
+**Label** (computed alongside, not part of the feature vector): `churn = 1` if no `session` event in (T, as_of] — strictly after the feature cutoff, so features and label never see overlapping data.
+
+**`gold.rfm_segments`** — the classic 1-5 quintile RFM scoring (R, F, M each scored 1-5, boundaries frozen from the training population and reused at serving time so a customer's segment doesn't drift just because the population changed), combined into segments (Champions / Loyal / At Risk / Hibernating / Lost, MoEngage-style). This is NOT a model input and NOT where the label comes from (that would be circular) — it's the required baseline heuristic ("bottom 2 segments = predicted churn") and a stakeholder-facing dashboard artifact, queryable directly via Athena.
+
+**`gold.churn_scores`** — the trained XGBoost model's probability output per customer, written after the training/scoring step, plus a copy pushed to DynamoDB (`customer_scores`) for low-latency serving — see [04-serving.md](04-serving.md).
+
+## Spark-on-Kubernetes
+
+Self-managed (not AWS Glue) — a deliberate choice to demonstrate direct platform engineering capability, accepted alongside the added 4-day-timeline/budget risk, with these mitigations:
+- **Spark Operator installed** (controller + `SparkApplication`/`ScheduledSparkApplication` CRDs + admission webhook) — chosen over plain `spark-submit` for declarative, GitOps-friendly job specs and built-in status/retry/history (`kubectl get sparkapplications` is a real, live artifact for reviewers). See [03-orchestration.md](03-orchestration.md) for exactly how each CRD is used.
+- **Karpenter-managed EC2 NodePools**, not Fargate, for Spark workloads specifically — because the driver/executor on-demand-vs-spot split isn't possible on Fargate:
+  - **On-demand NodePool**: Spark **drivers** — losing a driver kills the whole job, so it needs stable capacity.
+  - **Spot NodePool**: Spark **executors** — Spark natively retries lost tasks on executor preemption, so spot's interruption risk is cheap to absorb, and spot pricing meaningfully cuts cost for a workload that's bursty by nature (only running when triggered).
+  - Karpenter provisions right-sized nodes just-in-time for pending pods and deprovisions them when idle, avoiding a static, always-paid-for node group for workloads that only run in short bursts.
+- Fargate remains the target for the *steady, lightweight* services (scoring/ingest API, Streamlit console, Spark History Server) — no driver/executor split needed there, so Fargate's simplicity still wins.
+- Driver + 1-2 executor pods, resource requests sized to actual data volume (a few thousand rows), not hypothetical big-data scale.
+- Runs as `SparkApplication`/`ScheduledSparkApplication` CRs (triggered by Airflow or the Operator's own cron), not an always-on cluster — pay only for actual run duration.
+- Docker image: `docker/spark-jobs/` — PySpark + Iceberg runtime jars + our Silver/Gold/Compaction code, one image, entrypoint selected by job arguments, pushed to ECR.
+
+## Compaction
+
+The live trickle simulator firing every ~10 minutes creates many small files in Bronze/Silver/Gold Iceberg tables — genuine small-file bloat, not a hypothetical concern. A separate Spark job runs Iceberg's maintenance procedures: `rewrite_data_files` (compact small files) and `expire_snapshots` (control metadata/storage growth over time). This one is a **`ScheduledSparkApplication`** CR (native Spark Operator cron, e.g. hourly) rather than an Airflow DAG — it's genuinely just "run on a timer, no dependencies," so it doesn't need Airflow's orchestration on top. Same `spark-jobs` Docker image, different entrypoint argument.
+
+## Catalog and querying
+
+**AWS Glue Data Catalog** holds the Iceberg table metadata for bronze/silver/gold. **Athena** queries all three layers directly — used by the reviewer console for dashboards and by marketing (in the real production scenario) for ad-hoc audience pulls (e.g. "give me everyone in the Hibernating segment"), independent of the real-time scoring API.
