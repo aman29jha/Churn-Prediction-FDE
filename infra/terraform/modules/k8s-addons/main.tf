@@ -294,13 +294,19 @@ resource "helm_release" "spark_operator" {
   # Karpenter provisions their nodes instead). The operator's own
   # controller/webhook pods must carry it explicitly or they'd be left
   # unscheduled themselves.
+  # type="string" is REQUIRED: Terraform's helm_release `set` block
+  # auto-coerces a bare "true"/"false" value to a YAML boolean, which then
+  # fails applying with `json: cannot unmarshal bool into ... labels of
+  # type string` — Kubernetes label VALUES must be strings, never bools.
   set {
     name  = "controller.labels.fargate-scheduled"
     value = "true"
+    type  = "string"
   }
   set {
     name  = "webhook.labels.fargate-scheduled"
     value = "true"
+    type  = "string"
   }
 
   depends_on = [kubernetes_namespace.churn_service]
