@@ -1,0 +1,120 @@
+"""
+Reviewer console. See docs/architecture/06-reviewer-console.md.
+
+Run: streamlit run src/console/streamlit_app.py
+Expects the FastAPI service running (default http://127.0.0.1:8811) for
+the live lookup tab, and the reports/ + models/ artifacts from
+scripts/run_training_pipeline.py for everything else.
+"""
+from __future__ import annotations
+
+import json
+import os
+from pathlib import Path
+
+import pandas as pd
+import requests
+import streamlit as st
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
+REPORTS_DIR = REPO_ROOT / "reports"
+DOCS_DIR = REPO_ROOT / "docs"
+API_BASE_URL = os.environ.get("API_BASE_URL", "http://127.0.0.1:8811")
+INGEST_TOKEN = os.environ.get("INGEST_TOKEN", "local-dev-token")
+
+st.set_page_config(page_title="Churn Prediction — Reviewer Console", layout="wide")
+st.title("Churn Prediction Service — Reviewer Console")
+st.caption(
+    "Localytics FDE take-home. Personal AWS sandbox deployment; "
+    "Terraform re-applied unchanged to the official account once that invite arrives."
+)
+
+tab_arch, tab_model, tab_explain, tab_fairness, tab_lookup = st.tabs(
+    ["Architecture", "Model Dashboard", "Explainability", "Fairness", "Live Lookup"]
+)
+
+with tab_arch:
+    st.header("System Architecture")
+    st.markdown((DOCS_DIR / "architecture" / "00-overview.md").read_text())
+    with st.expander("Data platform (medallion, Iceberg, Spark-on-K8s)"):
+        st.markdown((DOCS_DIR / "architecture" / "01-data-platform.md").read_text())
+    with st.expander("Simulator"):
+        st.markdown((DOCS_DIR / "architecture" / "02-simulator.md").read_text())
+    with st.expander("Orchestration"):
+        st.markdown((DOCS_DIR / "architecture" / "03-orchestration.md").read_text())
+    with st.expander("Serving"):
+        st.markdown((DOCS_DIR / "architecture" / "04-serving.md").read_text())
+    with st.expander("Observability"):
+        st.markdown((DOCS_DIR / "architecture" / "05-observability.md").read_text())
+
+with tab_model:
+    st.header("Baseline vs. XGBoost")
+    metrics_path = REPORTS_DIR / "metrics.json"
+    if metrics_path.exists():
+        metrics = pd.read_json(metrics_path, orient="index")
+        st.dataframe(metrics.style.format("{:.4f}"))
+        col1, col2 = st.columns(2)
+        col1.metric("XGBoost PR-AUC", f"{metrics.loc['xgboost', 'pr_auc']:.3f}",
+                    delta=f"{metrics.loc['xgboost', 'pr_auc'] - metrics.loc['baseline', 'pr_auc']:+.3f} vs baseline")
+        col2.metric("XGBoost F2 @ capacity", f"{metrics.loc['xgboost', 'f2_at_capacity_threshold']:.3f}",
+                    delta=f"{metrics.loc['xgboost', 'f2_at_capacity_threshold'] - metrics.loc['baseline', 'f2_at_capacity_threshold']:+.3f} vs baseline")
+    else:
+        st.warning("Run `python -m scripts.run_training_pipeline` first to produce reports/metrics.json.")
+    st.markdown((DOCS_DIR / "evaluation.md").read_text())
+
+with tab_explain:
+    st.header("Explainability")
+    shap_img = REPORTS_DIR / "global_shap_importance.png"
+    if shap_img.exists():
+        st.image(str(shap_img), caption="Global feature importance (mean |SHAP value|)")
+    example_path = REPORTS_DIR / "example_explanation.json"
+    if example_path.exists():
+        example = json.loads(example_path.read_text())
+        st.subheader(f"Example: {example['customer_id']} (churn probability = {example['churn_probability']:.3f})")
+        st.write(example["plain_language"])
+        st.dataframe(pd.DataFrame(example["explanation"]))
+    st.markdown((DOCS_DIR / "explainability.md").read_text())
+
+with tab_fairness:
+    st.header("Fairness / Bias Check")
+    fairness_path = REPORTS_DIR / "fairness.json"
+    if fairness_path.exists():
+        fairness_df = pd.read_json(fairness_path)
+        findings = fairness_df[fairness_df["is_finding"]]
+        if len(findings):
+            st.warning(f"{len(findings)} finding(s) flagged (FNR ratio > 1.25x or absolute gap > 10pt).")
+            st.dataframe(findings)
+        else:
+            st.success("No fairness findings above threshold.")
+        st.dataframe(fairness_df)
+    st.markdown((DOCS_DIR / "fairness.md").read_text())
+
+with tab_lookup:
+    st.header("Live Lookup")
+    st.caption(f"Calls the real deployed API at {API_BASE_URL} — proves the service actually works.")
+    customer_id = st.text_input("Customer ID", value="syn_cust_00001")
+    if st.button("Score this customer"):
+        try:
+            response = requests.get(f"{API_BASE_URL}/score/{customer_id}", timeout=5)
+            if response.status_code == 200:
+                result = response.json()
+                col1, col2 = st.columns(2)
+                col1.metric("Churn probability", f"{result['churn_probability']:.1%}")
+                col2.metric("RFM segment", result["rfm_segment"])
+                st.write(result["plain_language"])
+                st.dataframe(pd.DataFrame(result["explanation"]))
+            elif response.status_code == 404:
+                st.error(f"Customer '{customer_id}' not found.")
+            else:
+                st.error(f"API returned {response.status_code}: {response.text}")
+        except requests.exceptions.ConnectionError:
+            st.error(f"Could not reach the API at {API_BASE_URL}. Is it running? "
+                     f"(`uvicorn src.service.app:app --port 8811`)")
+
+    st.divider()
+    st.subheader("Live Simulator Control")
+    st.caption(
+        "In production this is Airflow's native pause/unpause toggle on live_simulator_dag "
+        "(see docs/architecture/02-simulator.md) — shown here as a local-dev placeholder."
+    )
+    st.button("Trigger one manual event batch (demo placeholder)", disabled=True)

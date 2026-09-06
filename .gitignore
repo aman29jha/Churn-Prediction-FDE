@@ -10,4 +10,5 @@ __pycache__/
 *.egg-info/
 .ipynb_checkpoints/
 data/synthetic/
+data/local_bronze/
 models/
