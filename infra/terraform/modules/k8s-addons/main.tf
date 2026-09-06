@@ -277,6 +277,18 @@ resource "helm_release" "spark_operator" {
     value = "true"
   }
 
+  # Real bug found only by actually triggering a DAG run: the chart's
+  # controller/webhook both default --namespaces=default (confirmed via
+  # `kubectl logs` on the operator pod's startup args) — installing the
+  # release INTO churn-service does NOT make it watch that namespace. Every
+  # SparkApplication we submitted there sat with zero Events/Status forever;
+  # the operator's controller-runtime watch never saw it. Must be set
+  # explicitly to the namespace our SparkApplication CRs actually live in.
+  set {
+    name  = "spark.jobNamespaces[0]"
+    value = "churn-service"
+  }
+
   depends_on = [kubernetes_namespace.churn_service]
 }
 
