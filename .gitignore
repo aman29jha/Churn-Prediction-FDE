@@ -15,3 +15,4 @@ data/local_bronze/
 models/
 .docker_scratch/
 *.zip
+terraform.tfvars.sandbox
