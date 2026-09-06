@@ -12,3 +12,4 @@ __pycache__/
 data/synthetic/
 data/local_bronze/
 models/
+.docker_scratch/

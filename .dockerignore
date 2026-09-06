@@ -1,0 +1,10 @@
+.venv/
+.git/
+__pycache__/
+*.pyc
+.pytest_cache/
+data/synthetic/
+data/local_bronze/
+models/
+.terraform/
+*.tfstate*

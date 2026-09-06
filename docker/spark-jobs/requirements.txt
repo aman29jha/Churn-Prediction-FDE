@@ -1,0 +1,9 @@
+# pandas pinned <2.0: PySpark 3.4.0's toPandas() internally calls
+# .astype("datetime64") (no unit), which pandas >=2.0 rejects
+# ("Casting to unit-less dtype 'datetime64' is not supported") — a real
+# PySpark/pandas version incompatibility found while validating this
+# image, not a hypothetical concern. See docs/architecture/01-data-platform.md.
+pandas<2.0
+numpy<2.0
+xgboost
+scikit-learn
