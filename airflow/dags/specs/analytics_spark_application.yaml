@@ -23,6 +23,7 @@ spec:
   sparkConf:
     spark.eventLog.enabled: "true"
     spark.eventLog.dir: "s3a://churn-fde-sandbox-data-lake-784004375291/spark-events/"
+    spark.hadoop.fs.s3a.aws.credentials.provider: "com.amazonaws.auth.WebIdentityTokenCredentialsProvider"
   restartPolicy:
     type: OnFailure
     onFailureRetries: 1

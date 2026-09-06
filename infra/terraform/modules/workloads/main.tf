@@ -276,9 +276,21 @@ resource "kubernetes_deployment_v1" "spark_history" {
           name    = "spark-history-server"
           image   = "${var.ecr_repository_urls["spark-jobs"]}:${var.image_tag}"
           command = ["/opt/spark/bin/spark-class", "org.apache.spark.deploy.history.HistoryServer"]
+          # fs.s3a.aws.credentials.provider must be set explicitly: real bug
+          # found by actually running this against S3 — hadoop-aws 3.3.4's
+          # DEFAULT credential provider chain (TemporaryAWSCredentialsProvider,
+          # SimpleAWSCredentialsProvider, EnvironmentVariableCredentialsProvider,
+          # IAMInstanceCredentialsProvider) does NOT include
+          # WebIdentityTokenCredentialsProvider, so it never picks up the
+          # AWS_ROLE_ARN / AWS_WEB_IDENTITY_TOKEN_FILE env vars that EKS's IRSA
+          # webhook injects — failed with AccessDeniedException /
+          # NoAuthWithAWSException despite the pod's ServiceAccount having a
+          # real, correctly-scoped IAM role. Same fix required in every
+          # SparkApplication spec (airflow/dags/specs/*.yaml) that reads/writes
+          # s3a:// paths, for the identical reason.
           env {
             name  = "SPARK_HISTORY_OPTS"
-            value = "-Dspark.history.fs.logDirectory=s3a://${var.data_lake_bucket}/spark-events/ -Dspark.history.ui.port=18080"
+            value = "-Dspark.history.fs.logDirectory=s3a://${var.data_lake_bucket}/spark-events/ -Dspark.history.ui.port=18080 -Dspark.hadoop.fs.s3a.aws.credentials.provider=com.amazonaws.auth.WebIdentityTokenCredentialsProvider"
           }
           port {
             container_port = 18080
