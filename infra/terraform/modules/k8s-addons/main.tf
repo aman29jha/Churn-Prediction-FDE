@@ -424,8 +424,11 @@ resource "kubernetes_role" "airflow_spark_operator_access" {
   }
   rule {
     api_groups = ["sparkoperator.k8s.io"]
-    resources  = ["sparkapplications", "scheduledsparkapplications"]
-    verbs      = ["get", "list", "watch", "create", "update", "patch", "delete"]
+    resources = [
+      "sparkapplications", "sparkapplications/status",
+      "scheduledsparkapplications", "scheduledsparkapplications/status",
+    ]
+    verbs = ["get", "list", "watch", "create", "update", "patch", "delete"]
   }
 }
 
