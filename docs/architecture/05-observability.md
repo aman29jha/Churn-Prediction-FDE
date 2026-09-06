@@ -18,9 +18,18 @@ Every component (API, Spark jobs, live simulator) ships stdout to **CloudWatch L
 
 **AWS X-Ray**, end-to-end (ingress -> API -> DynamoDB/S3 -> response) — a real per-hop latency breakdown for a given request, not just an aggregate number.
 
-## Dashboard
+## Dashboard — organized around the assignment's own 4 production-readiness pillars
 
-One CloudWatch Dashboard aggregating: API latency/error rate/throughput, ingest metrics, Spark job success/failure + duration, DynamoDB throttles/capacity, EKS Container Insights. Linked from the reviewer console.
+Rather than one undifferentiated wall of metrics, the CloudWatch Dashboard has four named panel groups, each answering one specific question from the assignment's production-readiness section:
+
+| Panel group | Answers | Metrics |
+|---|---|---|
+| **Auth** | Is the service-to-service auth actually working, and is anyone trying to break it? | Successful vs. failed auth attempts (401/403 rate) on `/score` and `/events/ingest`, broken out by caller (simulator vs. console vs. other) |
+| **Rate limiting** | Is the limiter doing its job, and against whom? | Requests allowed vs. throttled (429 rate) per route, top offending callers |
+| **Observability (latency/errors)** | Is the service healthy right now? | P50/P90/P99 latency, error rate, throughput on `/score` and `/events/ingest` (via EMF), plus X-Ray trace map |
+| **Failure modes** | When something breaks, what actually broke, and did we degrade gracefully? | DynamoDB throttle/error rate, S3 read/write errors, model-load failures triggering the cold-path fallback, Spark job failure count (from Airflow/SparkApplication status), Spark job success/failure + duration, EKS Container Insights (pod restarts/OOMs) |
+
+This structure is deliberate: it means the dashboard itself is direct evidence for the "how does this handle auth/rate limiting/observability/failure modes" question, not just a claim in the write-up. Linked from the reviewer console.
 
 ## Alarms
 
