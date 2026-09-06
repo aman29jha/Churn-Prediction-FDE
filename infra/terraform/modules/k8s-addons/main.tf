@@ -289,6 +289,20 @@ resource "helm_release" "spark_operator" {
     value = "churn-service"
   }
 
+  # See eks module's "apps" Fargate profile: it now requires this label to
+  # claim a pod (Spark driver/executor pods deliberately don't carry it, so
+  # Karpenter provisions their nodes instead). The operator's own
+  # controller/webhook pods must carry it explicitly or they'd be left
+  # unscheduled themselves.
+  set {
+    name  = "controller.labels.fargate-scheduled"
+    value = "true"
+  }
+  set {
+    name  = "webhook.labels.fargate-scheduled"
+    value = "true"
+  }
+
   depends_on = [kubernetes_namespace.churn_service]
 }
 
@@ -323,6 +337,13 @@ resource "helm_release" "airflow" {
 
   values = [yamlencode({
     executor = "KubernetesExecutor"
+    # Chart-wide label merged into every pod template this chart renders
+    # (scheduler/webserver/statsd AND the KubernetesExecutor's own task-pod
+    # template) — see eks module's "apps" Fargate profile for why this is
+    # required for Fargate to claim these pods at all.
+    labels = {
+      "fargate-scheduled" = "true"
+    }
     # Keep failed KubernetesExecutor task pods around (chart default deletes
     # them immediately) — without this, a failing SparkKubernetesOperator/
     # KubernetesPodOperator task's pod vanishes in seconds with no remote

@@ -75,7 +75,7 @@ resource "kubernetes_deployment_v1" "api_service" {
 
     template {
       metadata {
-        labels = { app = "api-service" }
+        labels = { app = "api-service", "fargate-scheduled" = "true" }
       }
       spec {
         service_account_name = kubernetes_service_account.api_service.metadata[0].name
@@ -180,7 +180,7 @@ resource "kubernetes_deployment_v1" "console" {
 
     template {
       metadata {
-        labels = { app = "console" }
+        labels = { app = "console", "fargate-scheduled" = "true" }
       }
       spec {
         container {
@@ -268,7 +268,7 @@ resource "kubernetes_deployment_v1" "spark_history" {
     }
     template {
       metadata {
-        labels = { app = "spark-history-server" }
+        labels = { app = "spark-history-server", "fargate-scheduled" = "true" }
       }
       spec {
         service_account_name = kubernetes_service_account.spark_jobs.metadata[0].name

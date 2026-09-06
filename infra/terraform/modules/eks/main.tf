@@ -126,7 +126,23 @@ resource "aws_eks_fargate_profile" "apps" {
   pod_execution_role_arn = aws_iam_role.fargate_pod_execution.arn
   subnet_ids             = var.private_subnet_ids
 
+  # Real bug found by actually triggering medallion_pipeline_dag: a plain
+  # namespace selector (no labels) claims EVERY pod in churn-service,
+  # including the Spark driver/executor pods that SparkKubernetesOperator
+  # creates there — which carry a `workload-type: spark-driver/executor`
+  # nodeSelector meant for Karpenter's EC2 NodePools, not Fargate. Fargate's
+  # own scheduler grabbed them anyway (its admission webhook matches on
+  # namespace before anything else gets a say) and then failed forever:
+  # "MatchNodeSelector failed: Fargate profile apps cannot satisfy pod's
+  # node selector/affinity requirements". Scoped to an explicit label
+  # instead, applied to every OTHER workload in this namespace (api-service,
+  # console, spark-history-server, Airflow's chart-wide `labels`, Spark
+  # Operator's controller/webhook `labels`) — Spark driver/executor pods
+  # deliberately don't carry it, so they fall through to Karpenter.
   selector {
-    namespace = "churn-service" # api-service, console, spark-history-server, karpenter controller
+    namespace = "churn-service"
+    labels = {
+      "fargate-scheduled" = "true"
+    }
   }
 }
