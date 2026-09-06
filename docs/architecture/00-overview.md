@@ -64,6 +64,7 @@ flowchart TB
 | [04-serving.md](04-serving.md) | Real-time API, DynamoDB serving-layer split, ingress/auth/rate-limiting |
 | [05-observability.md](05-observability.md) | CloudWatch logs/EMF metrics, X-Ray, dashboards, alarms, Spark History Server |
 | [06-reviewer-console.md](06-reviewer-console.md) | Streamlit console, Basic Auth, live lookup, evidence capture |
+| [07-analytics.md](07-analytics.md) | Business KPI trends, RFM segment migration, cohort retention — separate daily batch pipeline |
 | [../modeling.md](../modeling.md) | Model choice (XGBoost), training approach, synthetic data generation assumptions |
 | [../evaluation.md](../evaluation.md) | Metrics, threshold selection, evaluation protocol |
 

@@ -13,6 +13,7 @@ A single, consolidated, password-protected page tying the entire submission toge
 - **Explainability**: SHAP summary plot + example per-customer explanations in plain language — see [../modeling.md](../modeling.md).
 - **Fairness report**: subgroup metrics, gaps found, recommendations.
 - **RFM segment breakdown** (Champions / Loyal / At Risk / Hibernating / Lost).
+- **Analytics tab**: business KPI trends, RFM segment migration, and cohort retention charts, fed by the separate daily analytics pipeline — see [07-analytics.md](07-analytics.md).
 - **Live lookup box**: enter a `customer_id`, calls the real `/score` API, shows the churn probability + its SHAP explanation live — this is what proves the deployed service actually works, not a static screenshot.
 - Links out to the **Spark History Server** and the **CloudWatch Dashboard** for anyone who wants to go deeper.
 

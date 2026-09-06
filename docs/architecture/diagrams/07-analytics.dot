@@ -1,0 +1,35 @@
+digraph Analytics {
+  rankdir=TB;
+  graph [fontname="Helvetica", fontsize=11, bgcolor="white", pad=0.3];
+  node [fontname="Helvetica", fontsize=10, shape=box, style="rounded,filled", margin="0.2,0.12"];
+  edge [fontname="Helvetica", fontsize=9, color="#555555"];
+
+  SILVER [label="Silver Iceberg\nsilver.events (full history)", fillcolor="#bdc3c7"];
+  GOLDHIST [label="Gold Iceberg (append-only,\npartitioned by run_date)\nrfm_features / rfm_segments / churn_scores", fillcolor="#f1c40f"];
+
+  subgraph cluster_sparkop {
+    label="Spark Operator"; style="rounded"; color="#888888";
+    ANALYTICS_SA [label="Analytics SparkApplication\n(own image entrypoint)", fillcolor="#a9dfbf"];
+  }
+
+  subgraph cluster_airflow {
+    label="Airflow"; style="rounded"; color="#888888";
+    ANALYTICS_DAG [label="analytics_dag\n(daily schedule, time-based\n-- not event-triggered like\nmedallion_pipeline_dag)", fillcolor="#d5f5e3"];
+  }
+
+  KPI [label="gold.kpi_daily\nDAU/MAU, revenue trend,\nnew customers, aggregate\npush-open/campaign-click rates", shape=cylinder, fillcolor="#f8c471"];
+  MIGRATION [label="gold.segment_migration\ntransition matrix between\nconsecutive run_dates\n(e.g. At Risk -> Lost)", shape=cylinder, fillcolor="#f8c471"];
+  COHORT [label="gold.cohort_retention\n% of each acquisition-week\ncohort still active at\nweek 4/8/12, sliceable by\nacquisition_channel", shape=cylinder, fillcolor="#f8c471"];
+
+  ATHENA [label="Athena (via Glue Catalog)"];
+  CONSOLE [label="Reviewer Console\n(Analytics tab)"];
+
+  ANALYTICS_DAG -> ANALYTICS_SA;
+  SILVER -> ANALYTICS_SA;
+  GOLDHIST -> ANALYTICS_SA [label="historized segments\n(time series, not just latest)"];
+  ANALYTICS_SA -> KPI;
+  ANALYTICS_SA -> MIGRATION;
+  ANALYTICS_SA -> COHORT;
+  KPI -> ATHENA; MIGRATION -> ATHENA; COHORT -> ATHENA;
+  ATHENA -> CONSOLE;
+}

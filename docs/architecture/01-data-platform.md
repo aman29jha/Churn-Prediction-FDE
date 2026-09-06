@@ -51,6 +51,8 @@ Business-level, customer-grained tables:
 
 **`gold.churn_scores`** — the trained XGBoost model's probability output per customer, written after the training/scoring step, plus a copy pushed to DynamoDB (`customer_scores`) for low-latency serving — see [04-serving.md](04-serving.md).
 
+**History retention (important)**: `rfm_features`, `rfm_segments`, and `churn_scores` are **append-only, partitioned by `run_date`** — not overwritten each run. DynamoDB's `customer_scores` holds only the latest snapshot (all the real-time API needs), but the Iceberg tables keep every run's history, which is what powers segment-migration and trend analysis — see [07-analytics.md](07-analytics.md).
+
 ## Spark-on-Kubernetes
 
 Self-managed (not AWS Glue) — a deliberate choice to demonstrate direct platform engineering capability, accepted alongside the added 4-day-timeline/budget risk, with these mitigations:

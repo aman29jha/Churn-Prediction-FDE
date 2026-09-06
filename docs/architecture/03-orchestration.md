@@ -29,4 +29,5 @@ We installed the **Spark Operator** (a separate controller + CRDs + admission we
 
 - **`medallion_pipeline_dag`**: `Silver task -> Gold task`, real dependency chaining (Gold only runs if Silver succeeded) and automatic retries — not a timer-based guess at sequencing.
 - **`training_dag`**: manual trigger or infrequent (e.g. weekly) schedule, `KubernetesPodOperator` running plain Python/XGBoost (not Spark — see [../modeling.md](../modeling.md) for why). Deliberately decoupled from the main pipeline's cadence: **train rarely, score often** is itself a production-readiness talking point.
+- **`analytics_dag`**: daily, time-based schedule (not event-triggered like `medallion_pipeline_dag`) — KPI trends and cohort retention don't need low-latency refresh, and shouldn't couple to or slow down the churn-scoring critical path. See [07-analytics.md](07-analytics.md).
 - **Airflow UI**: DAG run history, retries, logs — linked from the reviewer console.
