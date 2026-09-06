@@ -195,6 +195,24 @@ resource "aws_iam_instance_profile" "node_instance" {
   role = aws_iam_role.node_instance.name
 }
 
+# Real bug found only by actually triggering medallion_pipeline_dag, one
+# layer deeper than the IAM fixes above: once Karpenter could actually
+# launch an EC2 instance (visible as a real i-xxxx in `aws ec2
+# describe-instances` and a Launched=True NodeClaim condition), it STILL
+# never joined the cluster — `kubectl get nodeclaims` showed
+# Registered=Unknown / "Node not registered with cluster" forever. This
+# cluster uses EKS's newer API authentication_mode (no aws-auth ConfigMap;
+# see modules/eks's access-entry resources for the deploying IAM
+# principal) — under that mode, EVERY node IAM role needs its own EKS
+# Access Entry of type EC2_LINUX, or its kubelet's bootstrap handshake is
+# silently rejected with no error surfaced anywhere in Karpenter's own
+# logs (it looks identical to a slow-to-boot node from Karpenter's side).
+resource "aws_eks_access_entry" "karpenter_node" {
+  cluster_name  = var.cluster_name
+  principal_arn = aws_iam_role.node_instance.arn
+  type          = "EC2_LINUX"
+}
+
 resource "helm_release" "karpenter" {
   name             = "karpenter"
   repository       = "oci://public.ecr.aws/karpenter"
