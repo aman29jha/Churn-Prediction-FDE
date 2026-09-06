@@ -66,6 +66,12 @@ Self-managed (not AWS Glue) — a deliberate choice to demonstrate direct platfo
 - Runs as `SparkApplication`/`ScheduledSparkApplication` CRs (triggered by Airflow or the Operator's own cron), not an always-on cluster — pay only for actual run duration.
 - Docker image: `docker/spark-jobs/` — PySpark + Iceberg runtime jars + our Silver/Gold/Compaction code, one image, entrypoint selected by job arguments, pushed to ECR.
 
+## Local[*] validation before this ever touches a cluster
+
+Per the execution plan, `src/spark_jobs/{silver_transform,gold_transform,compaction}.py` were validated in local PySpark mode (`tests/test_spark_jobs.py`) against real synthetic data before any Terraform/K8s work — proving the dedup/validation/aggregation logic correct while it's still cheap to debug. This caught a real, subtle bug: Spark's session timezone defaults to the JVM's local timezone, not UTC, so `toPandas()` was silently shifting every timestamp by the local UTC offset relative to pandas' UTC-aware values (a ~5.5 hour drift on this dev machine, consistent with IST). Fixed by explicitly setting `spark.sql.session.timeZone = "UTC"` — exactly the kind of correctness bug that's far cheaper to catch locally than after a cluster is involved.
+
+Gold's design choice — convert Silver's (Spark-scale) output to pandas via `toPandas()` and reuse the already-tested `src/features/rfm.py` functions rather than reimplementing the RFM window logic natively in PySpark — is validated by an exact-match test: the Spark path and the pure-pandas path must produce identical output for the same input, which is what justifies not maintaining two parallel implementations of the same business logic.
+
 ## Compaction
 
 The live trickle simulator firing every ~10 minutes creates many small files in Bronze/Silver/Gold Iceberg tables — genuine small-file bloat, not a hypothetical concern. A separate Spark job runs Iceberg's maintenance procedures: `rewrite_data_files` (compact small files) and `expire_snapshots` (control metadata/storage growth over time). This one is a **`ScheduledSparkApplication`** CR (native Spark Operator cron, e.g. hourly) rather than an Airflow DAG — it's genuinely just "run on a timer, no dependencies," so it doesn't need Airflow's orchestration on top. Same `spark-jobs` Docker image, different entrypoint argument.

@@ -11,4 +11,5 @@ pydantic
 httpx
 requests
 streamlit
+pyspark
 pytest
