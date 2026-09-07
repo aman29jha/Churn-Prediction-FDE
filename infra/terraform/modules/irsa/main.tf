@@ -47,6 +47,18 @@ resource "aws_iam_role_policy" "api_service" {
         Action   = ["s3:PutObject"]
         Resource = "${var.data_lake_bucket_arn}/bronze/*"
       },
+      # Real gap found from actually looking at the CloudWatch dashboard:
+      # the "Auth," "Rate limiting," and "Observability" panels all showed
+      # "No data available" from the moment the dashboard was deployed —
+      # nothing had ever published to the ChurnService namespace those
+      # panels query (see src/service/metrics.py). cloudwatch:PutMetricData
+      # has no resource-level ARNs to scope to (AWS requires "*" for it).
+      {
+        Sid      = "PublishCustomMetrics"
+        Effect   = "Allow"
+        Action   = ["cloudwatch:PutMetricData"]
+        Resource = "*"
+      },
       # Analytics dashboard: api-service runs Athena queries against the
       # real Iceberg tables (Glue Catalog) on behalf of the console's new
       # Analytics tab, rather than the console talking to AWS directly —

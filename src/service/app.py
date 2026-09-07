@@ -34,6 +34,7 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from src.modeling.explain import build_explainer, explain_customer
 from src.modeling.train import FEATURE_COLUMNS
 from src.service.athena_client import run_athena_query
+from src.service.metrics import put_metric
 from src.service.schemas import ExplanationItem, IngestBatch, IngestResponse, ScoreResponse
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -68,19 +69,44 @@ app = FastAPI(title="Churn Prediction Service (local dev)", lifespan=lifespan)
 security = HTTPBearer()
 
 
+@app.middleware("http")
+async def emit_request_metrics(request: Request, call_next):
+    # Backs the CloudWatch dashboard's "Observability: latency / error
+    # rate / throughput" panel (ChurnService/Latency, /ErrorRate,
+    # /Throughput) — see this module's docstring and metrics.py's for the
+    # real gap this closes. /health is excluded: it's the ALB target-group
+    # + k8s probe endpoint, firing every ~10-20s regardless of real
+    # traffic — including it would swamp the real request signal.
+    if request.url.path == "/health":
+        return await call_next(request)
+
+    start = time.perf_counter()
+    response = await call_next(request)
+    latency_ms = (time.perf_counter() - start) * 1000
+
+    put_metric("Latency", latency_ms, unit="Milliseconds")
+    put_metric("Throughput", 1)
+    put_metric("ErrorRate", 1.0 if response.status_code >= 500 else 0.0)
+    return response
+
+
 def _check_rate_limit(client_id: str):
     now = time.time()
     bucket = _rate_limit_buckets[client_id]
     while bucket and now - bucket[0] > RATE_LIMIT_WINDOW_SECONDS:
         bucket.popleft()
     if len(bucket) >= RATE_LIMIT_MAX_REQUESTS:
+        put_metric("RequestsThrottled")
         raise HTTPException(status_code=429, detail="Rate limit exceeded")
     bucket.append(now)
+    put_metric("RequestsAllowed")
 
 
 def require_auth(credentials: HTTPAuthorizationCredentials = Depends(security)) -> str:
     if credentials.credentials != INGEST_TOKEN:
+        put_metric("AuthFailure")
         raise HTTPException(status_code=401, detail="Invalid or missing bearer token")
+    put_metric("AuthSuccess")
     return credentials.credentials
 
 
