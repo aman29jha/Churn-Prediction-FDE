@@ -288,9 +288,21 @@ resource "kubernetes_deployment_v1" "spark_history" {
           # real, correctly-scoped IAM role. Same fix required in every
           # SparkApplication spec (airflow/dags/specs/*.yaml) that reads/writes
           # s3a:// paths, for the identical reason.
+          # spark.ui.proxyBase is REQUIRED behind a path-prefixed reverse
+          # proxy like this ALB: real bug found visually — the app list
+          # page loaded fine (HTTP 200), but rendered with zero rows even
+          # though `GET /api/v1/applications` returns real completed apps
+          # when hit directly. Root cause: the page's own JS calls
+          # `setUIRoot('')`, so its AJAX calls to /api/v1/applications
+          # target the domain ROOT, not /spark-history/api/v1/applications
+          # — which the ALB's ingress rules route to the console's
+          # catch-all "/" path instead of this service. spark.ui.proxyBase
+          # is Spark's own documented mechanism for exactly this reverse-
+          # proxy-path-prefix scenario; it makes setUIRoot (and every
+          # internal link) correctly prefixed.
           env {
             name  = "SPARK_HISTORY_OPTS"
-            value = "-Dspark.history.fs.logDirectory=s3a://${var.data_lake_bucket}/spark-events/ -Dspark.history.ui.port=18080 -Dspark.hadoop.fs.s3a.aws.credentials.provider=com.amazonaws.auth.WebIdentityTokenCredentialsProvider"
+            value = "-Dspark.history.fs.logDirectory=s3a://${var.data_lake_bucket}/spark-events/ -Dspark.history.ui.port=18080 -Dspark.hadoop.fs.s3a.aws.credentials.provider=com.amazonaws.auth.WebIdentityTokenCredentialsProvider -Dspark.ui.proxyBase=/spark-history"
           }
           port {
             container_port = 18080
