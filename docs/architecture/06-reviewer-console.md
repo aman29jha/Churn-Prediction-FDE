@@ -29,4 +29,10 @@ A single, consolidated, password-protected page tying the entire submission toge
 
 ## Risk: AWS access lapses after 4 days
 
-The console link may go dark before anyone reviews it. Mitigation: screenshots of the console itself are captured into `docs/evidence/` in this repo — the same reasoning as the assignment README's own "capture evidence in case account access has expired" instruction.
+The console link may go dark before anyone reviews it. Mitigation: `docs/evidence/` in this repo
+captures real request/response JSON, pod/job status, and Athena/CloudWatch verification output from
+the live deployment — the same reasoning as the assignment README's own "capture evidence in case
+account access has expired" instruction. (Correction: an earlier version of this note claimed
+screenshots of the console UI itself were part of that evidence — they aren't; `docs/evidence/`
+is text/JSON captures only, no images. Left as a known gap rather than silently fixing the claim to
+match, same as every other honesty-over-polish call in this repo.)

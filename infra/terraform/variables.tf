@@ -64,7 +64,7 @@ variable "dags_git_repo" {
 }
 
 variable "image_tag" {
-  description = "Git-SHA-based tag for the 3 Docker images already pushed to ECR (see docs/architecture/08-infrastructure.md). Suffixed -amd64: the first push (sha-83887be) was built natively on Apple Silicon (arm64) and crashed on Fargate's amd64 nodes with 'exec format error' — rebuilt with `docker buildx build --platform linux/amd64`. Bumped to sha-17602ba-amd64: api-service now emits real CloudWatch custom metrics (Auth/RateLimit/Latency/ErrorRate/Throughput) — the dashboard's panels for these had shown 'No data available' since deployment, since nothing had ever published to them; all 3 images rebuilt under the same tag for a consistent per-commit deploy."
+  description = "Git-SHA-based tag for the 3 Docker images already pushed to ECR (see docs/architecture/08-infrastructure.md). Suffixed -amd64: the first push (sha-83887be) was built natively on Apple Silicon (arm64) and crashed on Fargate's amd64 nodes with 'exec format error' — rebuilt with `docker buildx build --platform linux/amd64`. Bumped to sha-0844cdd-amd64: fixed the SHAP plain-language summary calling risk 'elevated' regardless of actual predicted probability (found live via the console's own Live Lookup default customer_id) and the console's Live Lookup error handling; spark-jobs image content unchanged, rebuilt/retagged only to keep all 3 images on one shared per-commit tag."
   type        = string
-  default     = "sha-17602ba-amd64"
+  default     = "sha-0844cdd-amd64"
 }
