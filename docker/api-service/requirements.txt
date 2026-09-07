@@ -6,3 +6,9 @@ shap
 pandas
 numpy
 boto3
+# requests + s3fs: needed by src/data_gen/live_simulator.py, which reuses
+# this image for live_simulator_dag (KubernetesPodOperator) — requests to
+# POST to /events/ingest, s3fs because pandas delegates s3:// reads to it
+# under the hood (pd.read_json("s3://...") silently needs this installed).
+requests
+s3fs
