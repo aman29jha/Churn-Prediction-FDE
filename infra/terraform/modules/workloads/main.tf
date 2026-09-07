@@ -280,6 +280,19 @@ resource "kubernetes_config_map" "spark_history_nginx" {
       server {
         listen 8080;
 
+        # Without this, nginx's automatic/return redirects build the
+        # Location header from $server_port (8080, this sidecar's own
+        # internal listen port) instead of the port the client actually
+        # connected on. Real bug found by actually clicking the console's
+        # "Open Spark History Server directly" link and the embedded
+        # iframe: both hit bare `/spark-history` (no trailing slash),
+        # nginx 301-redirected to `http://<alb-host>:8080/spark-history/`,
+        # and port 8080 isn't open on the ALB (only 80 is) — so the link
+        # and the iframe both hung/failed to connect. This makes the
+        # redirect port-agnostic so it matches whatever port the client
+        # used (80 via the ALB).
+        port_in_redirect off;
+
         location /spark-history/ {
           rewrite ^/spark-history/(.*)$ /$1 break;
           proxy_pass http://127.0.0.1:18080;

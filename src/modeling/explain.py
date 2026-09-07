@@ -21,7 +21,12 @@ def global_feature_importance(explainer: shap.TreeExplainer, X: pd.DataFrame) ->
     return pd.Series(mean_abs, index=X.columns).sort_values(ascending=False)
 
 
-def explain_customer(explainer: shap.TreeExplainer, X_row: pd.DataFrame, top_k: int = 5) -> dict:
+def explain_customer(
+    explainer: shap.TreeExplainer,
+    X_row: pd.DataFrame,
+    top_k: int = 5,
+    churn_probability: float | None = None,
+) -> dict:
     shap_values = explainer.shap_values(X_row)[0]
     base_value = explainer.expected_value
     contributions = pd.Series(shap_values, index=X_row.columns).sort_values(key=np.abs, ascending=False)
@@ -36,7 +41,7 @@ def explain_customer(explainer: shap.TreeExplainer, X_row: pd.DataFrame, top_k: 
         }
         for feat, val in top.items()
     ]
-    plain_language = _plain_language(explanation)
+    plain_language = _plain_language(explanation, churn_probability)
     return {"base_value": float(base_value), "explanation": explanation, "plain_language": plain_language}
 
 
@@ -57,17 +62,47 @@ _FEATURE_PHRASES = {
 }
 
 
-def _plain_language(explanation: list[dict]) -> str:
+def _plain_language(explanation: list[dict], churn_probability: float | None = None) -> str:
     increasing = [e for e in explanation if e["direction"] == "increases_risk"]
     decreasing = [e for e in explanation if e["direction"] == "decreases_risk"]
 
+    # Real bug found via the live console's Live Lookup tab: the old version
+    # of this function called risk "elevated" any time the single largest-
+    # magnitude SHAP feature among the top-k happened to point up, with no
+    # regard for the actual predicted probability. That produced sentences
+    # like "churn risk is elevated" for a customer whose churn_probability
+    # was 2% (segment "Loyal") purely because push_open_rate outranked two
+    # larger negative (risk-reducing) features in the top-5 list. Overall
+    # framing must be driven by the actual predicted probability; the SHAP
+    # directions only explain *why*, not *whether*, risk is elevated.
+    if churn_probability is None:
+        level = "elevated" if increasing else None
+    elif churn_probability >= 0.5:
+        level = "elevated"
+    elif churn_probability >= 0.15:
+        level = "moderate"
+    else:
+        level = "low"
+
     parts = []
-    if increasing:
+    if level == "elevated" and increasing:
         drivers = " and ".join(_FEATURE_PHRASES.get(e["feature"], e["feature"]) for e in increasing[:2])
         parts.append(f"This customer's churn risk is elevated mainly because of {drivers}.")
+    elif level == "moderate" and increasing:
+        drivers = " and ".join(_FEATURE_PHRASES.get(e["feature"], e["feature"]) for e in increasing[:2])
+        parts.append(f"This customer's churn risk is moderate, pushed up somewhat by {drivers}.")
+    elif level == "low" and increasing:
+        drivers = " and ".join(_FEATURE_PHRASES.get(e["feature"], e["feature"]) for e in increasing[:2])
+        parts.append(
+            f"This customer's overall churn risk is low, even though {drivers} nudge it up on their own."
+        )
+
     if decreasing:
         offset = _FEATURE_PHRASES.get(decreasing[0]["feature"], decreasing[0]["feature"])
-        parts.append(f"On the positive side, {offset} is a mitigating signal.")
+        if level == "low":
+            parts.append(f"That's mainly held down by {offset}.")
+        else:
+            parts.append(f"On the positive side, {offset} is a mitigating signal.")
     if not parts:
         parts.append("This customer's churn risk is close to the population average, with no single dominant driver.")
     return " ".join(parts)

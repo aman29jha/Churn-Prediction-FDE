@@ -1,6 +1,22 @@
 # Submission Notes
 
-Read this first — it covers the two things a reviewer would otherwise have to discover on their own.
+Read this first — it covers the things a reviewer would otherwise have to discover on their own.
+
+## How to access the live console and Airflow
+
+`docs/architecture/06-reviewer-console.md` says console credentials are "shared with Localytics
+separately (in the submission notes), never committed to this repo" — that's this section; it was
+never actually filled in until now, which meant a reviewer following the console's own pointer here
+would find nothing. Fixing that:
+
+- **Console URL**: the ALB hostname from `kubectl get ingress -n churn-service` (or
+  `terraform output ingress_hostname` in `infra/terraform`), port 80.
+- **Console password**: intentionally not written in this file (this repo is public) — since this
+  is the same AWS account used for this interview (see below), fetch it directly:
+  `kubectl get secret console-secrets -n churn-service -o jsonpath='{.data.CONSOLE_PASSWORD}' | base64 -d`.
+- **Airflow login** (via the console's Observability tab, or `<console-url>/airflow` directly):
+  `admin` / `admin` — the Apache Airflow Helm chart's stock `defaultUser`, not overridden in
+  `infra/terraform/modules/k8s-addons/main.tf`'s `helm_release.airflow`.
 
 ## Which AWS account this was deployed to
 

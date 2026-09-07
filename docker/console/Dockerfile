@@ -1,5 +1,9 @@
 # Streamlit reviewer console. See docs/architecture/06-reviewer-console.md.
-# Basic Auth is applied at the ingress level in production, not in this image.
+# Auth: ALB doesn't support htpasswd-style Basic Auth (only Cognito/OIDC,
+# disproportionate to this exercise), so the password gate is app-level,
+# inside streamlit_app.py itself (CONSOLE_PASSWORD env var) — not applied
+# at the ingress. See the "Auth note" comment at the top of
+# src/console/streamlit_app.py for the full reasoning.
 FROM python:3.12-slim
 
 RUN useradd --create-home --uid 1000 appuser

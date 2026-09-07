@@ -242,11 +242,20 @@ with tab_lookup:
         except requests.exceptions.ConnectionError:
             st.error(f"Could not reach the API at {API_BASE_URL}. Is it running? "
                      f"(`uvicorn src.service.app:app --port 8811`)")
+        except requests.exceptions.RequestException as e:
+            # Real bug: a bare `except ConnectionError` here let anything
+            # else requests can raise (e.g. ReadTimeout, the likely failure
+            # mode if Athena/SHAP is slow) propagate out of this block and
+            # render as a raw Python traceback in the console — a confusing,
+            # broken-looking screen for a reviewer. Catch the general case
+            # too, same as the Analytics tab already does.
+            st.error(f"Request to the API at {API_BASE_URL} failed: {e}")
 
     st.divider()
     st.subheader("Live Simulator Control")
     st.caption(
-        "In production this is Airflow's native pause/unpause toggle on live_simulator_dag "
-        "(see docs/architecture/02-simulator.md) — shown here as a local-dev placeholder."
+        "Disabled placeholder — this console doesn't duplicate simulator control. The real "
+        "toggle is Airflow's native pause/unpause on live_simulator_dag; open it from the "
+        "Observability tab's Airflow link above (see docs/architecture/02-simulator.md)."
     )
     st.button("Trigger one manual event batch (demo placeholder)", disabled=True)

@@ -88,7 +88,9 @@ def main():
     top_risk_idx = int(np.argmax(model_scores))
     example_row = X_test.iloc[[top_risk_idx]]
     example_customer_id = split.test.iloc[top_risk_idx]["customer_id"]
-    example_explanation = explain_customer(explainer, example_row, top_k=3)
+    example_explanation = explain_customer(
+        explainer, example_row, top_k=3, churn_probability=float(model_scores[top_risk_idx])
+    )
     example_explanation["customer_id"] = example_customer_id
     example_explanation["churn_probability"] = float(model_scores[top_risk_idx])
     print(f"\n=== Example explanation ({example_customer_id}, p={model_scores[top_risk_idx]:.3f}) ===")

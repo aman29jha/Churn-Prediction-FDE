@@ -53,6 +53,18 @@ resource "kubernetes_config_map" "airflow_webserver_nginx" {
         server {
           listen 8081;
 
+          # Without this, nginx's automatic/return redirects build the
+          # Location header from $server_port (8081, this sidecar's own
+          # internal listen port) instead of the port the client actually
+          # connected on. Real bug found by actually clicking the
+          # console's "Open Airflow directly" link: it points at bare
+          # `/airflow` (no trailing slash), nginx 301-redirected to
+          # `http://<alb-host>:8081/airflow/`, and port 8081 isn't open on
+          # the ALB (only 80 is) — so the link hung/failed to connect.
+          # This makes the redirect port-agnostic so it matches whatever
+          # port the client used (80 via the ALB).
+          port_in_redirect off;
+
           location /airflow/ {
             rewrite ^/airflow/(.*)$ /$1 break;
             proxy_pass http://127.0.0.1:8080;

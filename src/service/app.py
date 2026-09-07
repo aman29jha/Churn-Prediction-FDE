@@ -131,7 +131,9 @@ def score_customer(customer_id: str, request: Request, explain: bool = True):
         # (the feature row is already in the cache, no recompute from raw
         # events needed) followed by one fast TreeExplainer call.
         feature_row = pd.DataFrame([{c: entry.get(c, np.nan) for c in _state["feature_columns"]}])
-        result = explain_customer(_state["explainer"], feature_row, top_k=5)
+        result = explain_customer(
+            _state["explainer"], feature_row, top_k=5, churn_probability=entry["churn_probability"]
+        )
         explanation = [ExplanationItem(**item) for item in result["explanation"]]
         plain_language = result["plain_language"]
 
