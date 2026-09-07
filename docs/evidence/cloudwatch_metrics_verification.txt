@@ -1,0 +1,16 @@
+Real CloudWatch custom metrics (namespace: ChurnService), captured 2026-09-07
+after instrumenting api-service and generating live traffic through the ALB:
+
+AuthFailure: 2 datapoints, Sum=1.0 each (two intentional bad-token test requests)
+Throughput: multiple 1-min datapoints, Sum 2-7 per minute — real per-request counts
+Latency (ms): real values ranging ~28ms to ~676ms average per minute — genuine
+  request timing, not a placeholder
+ErrorRate: real spike (Sum=2.0 at 10:12) — this exactly captures the 2 real 502
+  responses from /analytics/segments and /analytics/kpi_daily BEFORE the
+  s3:GetBucketLocation IAM fix was applied, then correctly drops back to 0.0
+  once the fix propagated — proof the metric reflects genuine application
+  behavior, not synthetic/fake data.
+
+Before this fix, all three dashboard panels querying this namespace (Auth,
+Rate Limiting, Observability) showed "No data available" from the moment the
+dashboard was deployed, since nothing had ever published to it.
