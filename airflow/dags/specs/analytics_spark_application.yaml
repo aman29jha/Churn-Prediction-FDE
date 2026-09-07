@@ -13,12 +13,24 @@ spec:
   image: "784004375291.dkr.ecr.ap-south-1.amazonaws.com/churn-fde-sandbox-spark-jobs:sha-e696da2-amd64"
   imagePullPolicy: IfNotPresent
   mainApplicationFile: local:///app/scripts/spark_job_entrypoint.py
+  # Real bug found by actually triggering this for the first time (it had
+  # never been run before): the previous "gold" placeholder arg would have
+  # crashed immediately on submission — the gold job requires --model and
+  # --baseline and raises SystemExit without them, neither of which this
+  # spec ever passed. Now uses the real, distinct "analytics" entrypoint
+  # mode (src/spark_jobs/analytics_transform.py), which only implements
+  # kpi_daily so far — see that module's docstring for why
+  # segment_migration/cohort_retention aren't done yet (they need Gold's
+  # tables to be append-only/partitioned by run_date first, a separate
+  # change not made in this pass).
   arguments:
-    - "gold" # placeholder entrypoint arg — analytics-specific job logic (kpi_daily/segment_migration/cohort_retention) is a documented next step, not yet a distinct entrypoint mode
+    - "analytics"
     - "--input"
     - "s3a://churn-fde-sandbox-data-lake-784004375291/silver/events/"
     - "--output"
     - "s3a://churn-fde-sandbox-data-lake-784004375291/gold/analytics/"
+    - "--iceberg-catalog-db"
+    - "glue_catalog.churn_fde_sandbox"
   sparkVersion: "3.4.0"
   sparkConf:
     spark.eventLog.enabled: "true"
@@ -26,6 +38,10 @@ spec:
     spark.hadoop.fs.s3a.aws.credentials.provider: "com.amazonaws.auth.WebIdentityTokenCredentialsProvider"
     spark.sql.session.timeZone: "UTC"
     spark.sql.extensions: "org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions"
+    spark.sql.catalog.glue_catalog: "org.apache.iceberg.spark.SparkCatalog"
+    spark.sql.catalog.glue_catalog.catalog-impl: "org.apache.iceberg.aws.glue.GlueCatalog"
+    spark.sql.catalog.glue_catalog.io-impl: "org.apache.iceberg.aws.s3.S3FileIO"
+    spark.sql.catalog.glue_catalog.warehouse: "s3://churn-fde-sandbox-data-lake-784004375291/warehouse/"
   restartPolicy:
     type: OnFailure
     onFailureRetries: 1

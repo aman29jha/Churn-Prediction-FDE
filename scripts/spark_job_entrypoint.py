@@ -10,6 +10,16 @@ Usage:
   spark-submit scripts/spark_job_entrypoint.py gold --input /data/silver --output /data/gold \
       --model /models/xgboost_model.json --baseline /models/baseline.pkl --as-of 2024-06-01T12:00:00Z
   spark-submit scripts/spark_job_entrypoint.py compaction --input /data/bronze --output /data/bronze_compacted
+  spark-submit scripts/spark_job_entrypoint.py analytics --input /data/silver --output /data/gold/analytics
+
+Add --iceberg-catalog-db (e.g. glue_catalog.churn_fde_sandbox) to ALSO
+write each output as a real Iceberg table registered in that catalog's
+database, alongside the existing plain-Parquet write (kept as-is so
+existing consumers of the plain S3 paths — e.g. the model-registry
+customer_scores.json refresh — are unaffected). Requires the SparkSession
+to have that catalog configured via sparkConf (spark.sql.catalog.<name>.*)
+— see docs/architecture/01-data-platform.md and
+airflow/dags/specs/*.yaml's sparkConf block.
 """
 from __future__ import annotations
 
@@ -23,23 +33,38 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import pandas as pd
+from pyspark.sql import DataFrame
 
+from src.spark_jobs.analytics_transform import run_kpi_daily_transform
 from src.spark_jobs.compaction import compact_small_files
 from src.spark_jobs.gold_transform import run_gold_transform
 from src.spark_jobs.silver_transform import build_local_spark_session, run_silver_transform
 
 
+def _write(df: DataFrame, plain_path: str, iceberg_table: str | None, row_label: str) -> None:
+    df.write.mode("overwrite").parquet(plain_path)
+    print(f"[{row_label}] wrote {df.count()} rows to {plain_path}")
+    if iceberg_table:
+        df.writeTo(iceberg_table).using("iceberg").createOrReplace()
+        print(f"[{row_label}] wrote {df.count()} rows to Iceberg table {iceberg_table} (Glue Catalog)")
+
+
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("job", choices=["silver", "gold", "compaction"])
+    parser.add_argument("job", choices=["silver", "gold", "compaction", "analytics"])
     parser.add_argument("--input", required=True)
     parser.add_argument("--output", required=True)
     parser.add_argument("--model", default=None)
     parser.add_argument("--baseline", default=None)
     parser.add_argument("--as-of", default="2024-06-01T12:00:00Z")
+    parser.add_argument(
+        "--iceberg-catalog-db", default=None,
+        help="e.g. glue_catalog.churn_fde_sandbox — when set, also writes each output as a real Iceberg table there.",
+    )
     args = parser.parse_args()
 
     spark = build_local_spark_session(f"{args.job}-job")
+    catalog_db = args.iceberg_catalog_db
 
     if args.job == "silver":
         # multiLine handles a pretty-printed JSON array (like
@@ -47,8 +72,11 @@ def main():
         # is one-JSON-object-per-line append files, which read fine either way.
         bronze = spark.read.option("multiLine", "true").json(args.input)
         silver = run_silver_transform(bronze)
-        silver.write.mode("overwrite").parquet(args.output)
-        print(f"[silver] wrote {silver.count()} rows to {args.output}")
+        _write(
+            silver, args.output,
+            f"{catalog_db}.silver_events" if catalog_db else None,
+            "silver",
+        )
 
     elif args.job == "gold":
         if not args.model or not args.baseline:
@@ -61,9 +89,11 @@ def main():
             model_path=Path(args.model), baseline=baseline,
         )
         for name, df in result.items():
-            out_path = f"{args.output}/{name}"
-            df.write.mode("overwrite").parquet(out_path)
-            print(f"[gold] wrote {df.count()} rows to {out_path}")
+            _write(
+                df, f"{args.output}/{name}",
+                f"{catalog_db}.{name}" if catalog_db else None,
+                "gold",
+            )
 
     elif args.job == "compaction":
         df = spark.read.parquet(args.input)
@@ -71,6 +101,15 @@ def main():
         compacted = compact_small_files(df)
         compacted.write.mode("overwrite").parquet(args.output)
         print(f"[compaction] {before} -> {compacted.rdd.getNumPartitions()} partitions, wrote to {args.output}")
+
+    elif args.job == "analytics":
+        silver = spark.read.parquet(args.input)
+        kpi_daily = run_kpi_daily_transform(silver)
+        _write(
+            kpi_daily, f"{args.output}/kpi_daily",
+            f"{catalog_db}.kpi_daily" if catalog_db else None,
+            "analytics",
+        )
 
     spark.stop()
 

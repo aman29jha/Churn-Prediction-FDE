@@ -19,6 +19,7 @@ from src.data_gen.bootstrap import AS_OF
 from src.features.rfm import compute_label, compute_rfm_features
 from src.modeling.baseline import fit_rfm_quintile_baseline
 from src.modeling.train import prepare_dataset
+from src.spark_jobs.analytics_transform import run_kpi_daily_transform
 from src.spark_jobs.compaction import compact_small_files, count_partitions
 from src.spark_jobs.gold_transform import run_gold_transform
 from src.spark_jobs.silver_transform import build_local_spark_session, run_silver_transform
@@ -116,6 +117,33 @@ def test_gold_matches_pandas_path_exactly(spark, raw_events_pd):
         gold_scores["churn"].reset_index(drop=True), expected_labels_sorted["churn"].reset_index(drop=True),
         check_dtype=False,
     )
+
+
+def test_kpi_daily_matches_manual_pandas_aggregation(bronze_df):
+    silver = run_silver_transform(bronze_df)
+    kpi = run_kpi_daily_transform(silver).toPandas()
+
+    silver_pd = silver.toPandas()
+    silver_pd["event_date"] = pd.to_datetime(silver_pd["timestamp"]).dt.date
+
+    # Hand-verify one concrete day rather than trust the job's own logic:
+    # DAU and purchase revenue for the first day with any purchase event.
+    purchase_days = silver_pd[silver_pd["event_type"] == "purchase"]["event_date"]
+    assert len(purchase_days) > 0, "fixture must contain at least one purchase to test revenue aggregation"
+    sample_day = sorted(purchase_days.unique())[0]
+
+    expected_dau = silver_pd[silver_pd["event_date"] == sample_day]["customer_id"].nunique()
+    expected_revenue = silver_pd[
+        (silver_pd["event_date"] == sample_day) & (silver_pd["event_type"] == "purchase")
+    ]["amount_usd"].sum()
+
+    row = kpi[kpi["event_date"] == sample_day].iloc[0]
+    assert row["dau"] == expected_dau
+    assert row["total_revenue"] == pytest.approx(expected_revenue)
+
+    # push_open_rate must be a real ratio, not always 0/1 — proves the
+    # push_sent/push_open join+division actually happened, not a stub.
+    assert kpi["push_open_rate"].between(0, 1).all()
 
 
 def test_compaction_reduces_partition_count(spark, raw_events_pd):

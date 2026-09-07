@@ -24,6 +24,8 @@ spec:
     - "s3a://churn-fde-sandbox-data-lake-784004375291/bronze/"
     - "--output"
     - "s3a://churn-fde-sandbox-data-lake-784004375291/silver/events/"
+    - "--iceberg-catalog-db"
+    - "glue_catalog.churn_fde_sandbox"
   sparkVersion: "3.4.0"
   sparkConf:
     spark.eventLog.enabled: "true"
@@ -31,6 +33,16 @@ spec:
     spark.hadoop.fs.s3a.aws.credentials.provider: "com.amazonaws.auth.WebIdentityTokenCredentialsProvider"
     spark.sql.session.timeZone: "UTC"
     spark.sql.extensions: "org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions"
+    # Real, genuine Iceberg-on-Glue registration — found missing entirely
+    # (docs described it, the write path never did it: plain
+    # df.write.parquet() to a raw S3 path, zero Glue tables ever created).
+    # spark_catalog (the default, unnamed catalog) is deliberately left
+    # alone; this registers a second, explicitly-named catalog so existing
+    # plain-Parquet reads/writes at the same S3 paths are unaffected.
+    spark.sql.catalog.glue_catalog: "org.apache.iceberg.spark.SparkCatalog"
+    spark.sql.catalog.glue_catalog.catalog-impl: "org.apache.iceberg.aws.glue.GlueCatalog"
+    spark.sql.catalog.glue_catalog.io-impl: "org.apache.iceberg.aws.s3.S3FileIO"
+    spark.sql.catalog.glue_catalog.warehouse: "s3://churn-fde-sandbox-data-lake-784004375291/warehouse/"
   restartPolicy:
     type: OnFailure
     onFailureRetries: 2
