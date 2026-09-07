@@ -33,6 +33,7 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from src.modeling.explain import build_explainer, explain_customer
 from src.modeling.train import FEATURE_COLUMNS
+from src.service.athena_client import run_athena_query
 from src.service.schemas import ExplanationItem, IngestBatch, IngestResponse, ScoreResponse
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -116,6 +117,38 @@ def score_customer(customer_id: str, request: Request, explain: bool = True):
         explanation=explanation,
         plain_language=plain_language,
     )
+
+
+@app.get("/analytics/kpi_daily")
+def analytics_kpi_daily(request: Request):
+    """Real time-series KPI data for the console's Analytics tab — see
+    docs/architecture/07-analytics.md. Queries the real kpi_daily Iceberg
+    table via Athena; not precomputed/cached, since this table is small
+    and the console tab isn't a high-QPS path."""
+    _check_rate_limit(request.client.host if request.client else "unknown")
+    try:
+        rows = run_athena_query(
+            "SELECT event_date, dau, total_revenue, avg_revenue, purchase_count, "
+            "push_open_rate, campaign_click_rate FROM kpi_daily ORDER BY event_date"
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Athena query failed: {exc}") from exc
+    return {"rows": rows}
+
+
+@app.get("/analytics/segments")
+def analytics_segments(request: Request):
+    """RFM segment bucketing (Champions/Loyal/At Risk/Hibernating/Lost)
+    for the console's Analytics tab — the real rfm_segments Iceberg table,
+    queried live via Athena, not the training-time snapshot."""
+    _check_rate_limit(request.client.host if request.client else "unknown")
+    try:
+        rows = run_athena_query(
+            "SELECT segment, COUNT(*) as customers FROM rfm_segments GROUP BY segment ORDER BY customers DESC"
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Athena query failed: {exc}") from exc
+    return {"rows": rows}
 
 
 @app.post("/events/ingest", response_model=IngestResponse)

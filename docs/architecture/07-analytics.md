@@ -24,4 +24,4 @@ The churn-scoring Gold job runs on the event-driven trigger (new data arrives ->
 
 ## Consumption
 
-All three tables are queried via Athena (Glue Catalog) and surfaced in the reviewer console's Analytics tab as time-series charts — distinct from the console's per-customer lookup and model-metrics sections (see [06-reviewer-console.md](06-reviewer-console.md)).
+Real, not a mockup: the console's Analytics tab calls two API endpoints (`/analytics/kpi_daily`, `/analytics/segments`) that run live Athena queries against these Iceberg tables and render the results as actual time-series/bar charts — distinct from the console's per-customer lookup and model-metrics sections (see [06-reviewer-console.md](06-reviewer-console.md)). Currently only `kpi_daily` and the RFM segment bucketing (`rfm_segments`) are wired up this way; `segment_migration` and `cohort_retention` aren't implemented yet (see this doc's "Output tables" section and `SUBMISSION.md`).

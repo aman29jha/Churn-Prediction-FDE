@@ -52,13 +52,10 @@ if CONSOLE_PASSWORD:
                 st.error("Incorrect password.")
         st.stop()
 st.title("Churn Prediction Service — Reviewer Console")
-st.caption(
-    "Localytics FDE take-home. Personal AWS sandbox deployment; "
-    "Terraform re-applied unchanged to the official account once that invite arrives."
-)
+st.caption("Localytics FDE take-home — deployed to the AWS account used for this interview (see SUBMISSION.md).")
 
-tab_arch, tab_model, tab_explain, tab_fairness, tab_observability, tab_lookup = st.tabs(
-    ["Architecture", "Model Dashboard", "Explainability", "Fairness", "Observability", "Live Lookup"]
+tab_arch, tab_model, tab_explain, tab_fairness, tab_analytics, tab_observability, tab_lookup = st.tabs(
+    ["Architecture", "Model Dashboard", "Explainability", "Fairness", "Analytics", "Observability", "Live Lookup"]
 )
 
 with tab_arch:
@@ -116,6 +113,68 @@ with tab_fairness:
             st.success("No fairness findings above threshold.")
         st.dataframe(fairness_df)
     st.markdown((DOCS_DIR / "fairness.md").read_text())
+
+with tab_analytics:
+    st.header("Analytics")
+    st.caption(
+        "Real business-trend queries against the live Iceberg tables (Glue Catalog), run "
+        "on-demand via Athena through the API — not screenshots, not a mockup. See "
+        "docs/architecture/07-analytics.md. Only kpi_daily is implemented; segment_migration "
+        "and cohort_retention are documented next steps, not silently faked here (see "
+        "SUBMISSION.md for why — both need Gold's tables to be append-only/partitioned by "
+        "run_date first)."
+    )
+
+    st.subheader("RFM Segment Bucketing")
+    st.caption("Champions / Loyal / At Risk / Hibernating / Lost — from the real rfm_segments Iceberg table.")
+    try:
+        segments_resp = requests.get(f"{API_BASE_URL}/analytics/segments", timeout=30)
+        if segments_resp.status_code == 200:
+            segments_df = pd.DataFrame(segments_resp.json()["rows"])
+            segments_df["customers"] = pd.to_numeric(segments_df["customers"])
+            st.bar_chart(segments_df.set_index("segment")["customers"])
+            st.dataframe(segments_df, hide_index=True)
+        else:
+            st.error(f"API returned {segments_resp.status_code}: {segments_resp.text}")
+    except requests.exceptions.RequestException as e:
+        st.error(f"Could not reach the API at {API_BASE_URL}: {e}")
+
+    st.divider()
+
+    st.subheader("KPI Trends (daily)")
+    st.caption("DAU, revenue, push-open rate, campaign-click rate — from the real kpi_daily Iceberg table.")
+    try:
+        kpi_resp = requests.get(f"{API_BASE_URL}/analytics/kpi_daily", timeout=30)
+        if kpi_resp.status_code == 200:
+            kpi_rows = kpi_resp.json()["rows"]
+            if kpi_rows:
+                kpi_df = pd.DataFrame(kpi_rows)
+                kpi_df["event_date"] = pd.to_datetime(kpi_df["event_date"])
+                numeric_cols = [
+                    "dau", "total_revenue", "avg_revenue", "purchase_count",
+                    "push_open_rate", "campaign_click_rate",
+                ]
+                for col in numeric_cols:
+                    kpi_df[col] = pd.to_numeric(kpi_df[col], errors="coerce").fillna(0)
+                kpi_df = kpi_df.set_index("event_date").sort_index()
+
+                st.markdown("**Daily Active Users**")
+                st.line_chart(kpi_df["dau"])
+
+                st.markdown("**Daily Revenue**")
+                st.line_chart(kpi_df["total_revenue"])
+
+                st.markdown("**Push Open Rate / Campaign Click Rate**")
+                st.line_chart(kpi_df[["push_open_rate", "campaign_click_rate"]])
+
+                with st.expander(f"Raw kpi_daily rows ({len(kpi_df)} days)"):
+                    st.dataframe(kpi_df)
+            else:
+                st.info("kpi_daily table is empty — trigger analytics_dag in Airflow first.")
+        else:
+            st.error(f"API returned {kpi_resp.status_code}: {kpi_resp.text}")
+    except requests.exceptions.RequestException as e:
+        st.error(f"Could not reach the API at {API_BASE_URL}: {e}")
 
 with tab_observability:
     st.header("Observability")

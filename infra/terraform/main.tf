@@ -115,6 +115,7 @@ module "workloads" {
   ecr_repository_urls   = module.ecr.repository_urls
   model_registry_bucket = module.storage.model_registry_bucket
   data_lake_bucket      = module.storage.data_lake_bucket
+  glue_database_name    = module.storage.glue_database_name
   dashboard_name        = module.observability.dashboard_name
   api_service_role_arn  = module.irsa.api_service_role_arn
   spark_jobs_role_arn   = module.irsa.spark_jobs_role_arn

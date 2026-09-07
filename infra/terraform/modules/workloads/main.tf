@@ -107,6 +107,14 @@ resource "kubernetes_deployment_v1" "api_service" {
               }
             }
           }
+          env {
+            name  = "ATHENA_DATABASE"
+            value = var.glue_database_name
+          }
+          env {
+            name  = "ATHENA_OUTPUT_LOCATION"
+            value = "s3://${var.data_lake_bucket}/athena-results/"
+          }
 
           volume_mount {
             name       = "models"
@@ -255,6 +263,38 @@ resource "kubernetes_service_v1" "console" {
 # Reuses the spark-jobs image (already has a full Spark install) and the
 # spark-jobs IRSA role (already has S3 read access to the data lake
 # bucket) — no new image or role needed.
+# nginx sidecar strips the /spark-history prefix ALB can't rewrite itself
+# before proxying to Spark locally — see the deployment's proxyBase
+# comment for the full root-cause chain this fixes.
+resource "kubernetes_config_map" "spark_history_nginx" {
+  metadata {
+    name      = "spark-history-nginx-conf"
+    namespace = var.namespace
+  }
+  data = {
+    "default.conf" = <<-EOT
+      server {
+        listen 8080;
+
+        location /spark-history/ {
+          rewrite ^/spark-history/(.*)$ /$1 break;
+          proxy_pass http://127.0.0.1:18080;
+          proxy_set_header Host $host;
+          proxy_redirect off;
+        }
+
+        location = /spark-history {
+          return 301 /spark-history/;
+        }
+
+        location / {
+          return 404;
+        }
+      }
+    EOT
+  }
+}
+
 resource "kubernetes_deployment_v1" "spark_history" {
   metadata {
     name      = "spark-history-server"
@@ -299,7 +339,19 @@ resource "kubernetes_deployment_v1" "spark_history" {
           # catch-all "/" path instead of this service. spark.ui.proxyBase
           # is Spark's own documented mechanism for exactly this reverse-
           # proxy-path-prefix scenario; it makes setUIRoot (and every
-          # internal link) correctly prefixed.
+          # internal link) correctly prefixed — confirmed it does fix
+          # static asset links (CSS/JS now load, page was unstyled before).
+          #
+          # It does NOT fix the REST API servlet, though: Spark mounts
+          # /api/v1/* rigidly, ignoring proxyBase for INCOMING request
+          # matching (unlike the UI/static handlers, which are proxy-aware
+          # both ways). ALB itself can't rewrite paths (no path-rewrite
+          # action type, unlike nginx-ingress's rewrite-target annotation)
+          # — so `GET /spark-history/api/v1/applications` reached this pod
+          # fine but matched nothing Spark recognizes, falling through to
+          # the default page. Fixed with a real nginx sidecar (below) that
+          # strips the /spark-history prefix before proxying to Spark
+          # locally — the standard pattern for exactly this ALB limitation.
           env {
             name  = "SPARK_HISTORY_OPTS"
             value = "-Dspark.history.fs.logDirectory=s3a://${var.data_lake_bucket}/spark-events/ -Dspark.history.ui.port=18080 -Dspark.hadoop.fs.s3a.aws.credentials.provider=com.amazonaws.auth.WebIdentityTokenCredentialsProvider -Dspark.ui.proxyBase=/spark-history"
@@ -320,6 +372,35 @@ resource "kubernetes_deployment_v1" "spark_history" {
             period_seconds        = 15
           }
         }
+        container {
+          name  = "nginx-proxy"
+          image = "nginx:1.27-alpine"
+          port {
+            container_port = 8080
+          }
+          volume_mount {
+            name       = "nginx-conf"
+            mount_path = "/etc/nginx/conf.d"
+          }
+          resources {
+            requests = { cpu = "50m", memory = "64Mi" }
+            limits   = { cpu = "100m", memory = "128Mi" }
+          }
+          readiness_probe {
+            http_get {
+              path = "/spark-history/"
+              port = 8080
+            }
+            initial_delay_seconds = 5
+            period_seconds        = 10
+          }
+        }
+        volume {
+          name = "nginx-conf"
+          config_map {
+            name = kubernetes_config_map.spark_history_nginx.metadata[0].name
+          }
+        }
       }
     }
   }
@@ -333,8 +414,10 @@ resource "kubernetes_service_v1" "spark_history" {
   spec {
     selector = { app = "spark-history-server" }
     port {
+      # Routes through the nginx-proxy sidecar (8080), not directly at
+      # Spark (18080) — nginx is what strips the /spark-history prefix.
       port        = 80
-      target_port = 18080
+      target_port = 8080
     }
     type = "ClusterIP"
   }
