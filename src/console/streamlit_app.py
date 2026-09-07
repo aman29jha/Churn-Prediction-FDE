@@ -55,8 +55,8 @@ if CONSOLE_PASSWORD:
 st.title("Churn Prediction Service — Reviewer Console")
 st.caption("Localytics FDE take-home — deployed to the AWS account used for this interview (see SUBMISSION.md).")
 
-tab_arch, tab_model, tab_explain, tab_fairness, tab_analytics, tab_observability, tab_lookup = st.tabs(
-    ["Architecture", "Model Dashboard", "Explainability", "Fairness", "Analytics", "Observability", "Live Lookup"]
+tab_arch, tab_api, tab_model, tab_explain, tab_fairness, tab_analytics, tab_observability, tab_lookup = st.tabs(
+    ["Architecture", "API Docs", "Model Dashboard", "Explainability", "Fairness", "Analytics", "Observability", "Live Lookup"]
 )
 
 with tab_arch:
@@ -72,6 +72,92 @@ with tab_arch:
         st.markdown((DOCS_DIR / "architecture" / "04-serving.md").read_text())
     with st.expander("Observability"):
         st.markdown((DOCS_DIR / "architecture" / "05-observability.md").read_text())
+
+with tab_api:
+    st.header("API Reference")
+    # The browser's own Host header — dynamic on purpose, so these examples
+    # are always the real, currently-live ALB hostname (whatever it is at
+    # the moment you're viewing this) rather than a value baked in at
+    # build time that would go stale if the ALB were ever recreated.
+    try:
+        _host = st.context.headers.get("Host", "<this-console-host>")
+    except Exception:
+        _host = "<this-console-host>"
+    EXTERNAL_BASE_URL = f"http://{_host}"
+
+    st.caption(
+        f"Base URL: `{EXTERNAL_BASE_URL}` — the same host serving this console (read live from your "
+        "browser's own request, not hardcoded). All routes below are real, live, deployed endpoints "
+        "(see `src/service/app.py`), not a spec for something planned."
+    )
+
+    st.subheader("Auth")
+    st.markdown(
+        "Every route except `/events/ingest` is unauthenticated (rate-limited only — see "
+        "[docs/architecture/04-serving.md](.) for the reasoning). `/events/ingest` requires a bearer "
+        "token matching the `INGEST_TOKEN` K8s Secret, injected into the live simulator's pod the same way."
+    )
+
+    def _endpoint(method: str, path: str, auth: str, purpose: str, example: str):
+        st.markdown(f"#### `{method} {path}`")
+        st.markdown(f"**Auth:** {auth}  \n**Purpose:** {purpose}")
+        st.code(example, language="bash")
+        st.divider()
+
+    _endpoint(
+        "GET", "/health", "None",
+        "Liveness probe + a quick sanity count of how many customers are currently servable "
+        "from the in-memory score cache (see the known DynamoDB-vs-snapshot gap in SUBMISSION.md).",
+        f"curl {EXTERNAL_BASE_URL}/health",
+    )
+    _endpoint(
+        "GET", "/score/{customer_id}", "None",
+        "Real-time churn probability, RFM segment, and a plain-language SHAP explanation for one "
+        "customer — the same call this console's Live Lookup tab makes. Try `syn_cust_00001` "
+        "(synthetic) or `cust_00001` (from the original 80-customer sample).",
+        f"curl {EXTERNAL_BASE_URL}/score/syn_cust_00001",
+    )
+    _endpoint(
+        "POST", "/events/ingest", "Bearer token (`INGEST_TOKEN`)",
+        "Accepts a batch of raw engagement events — the same route the live trickle simulator "
+        "(`live_simulator_dag` in Airflow) posts to on its schedule.",
+        f'curl -X POST {EXTERNAL_BASE_URL}/events/ingest \\\n'
+        f'  -H "Authorization: Bearer <INGEST_TOKEN>" \\\n'
+        f'  -H "Content-Type: application/json" \\\n'
+        f'  -d \'{{"events": []}}\'',
+    )
+    _endpoint(
+        "GET", "/analytics/kpi_daily", "None",
+        "Real daily KPI trends (DAU, revenue, push-open rate, campaign-click rate) — runs a live "
+        "Athena query against the real `kpi_daily` Iceberg table. Backs the Analytics tab's charts.",
+        f"curl {EXTERNAL_BASE_URL}/analytics/kpi_daily",
+    )
+    _endpoint(
+        "GET", "/analytics/segments", "None",
+        "RFM segment bucketing (Champions / Loyal / At Risk / Hibernating / Lost) — a live Athena "
+        "query against the real `rfm_segments` Iceberg table. Backs the Analytics tab's bar chart.",
+        f"curl {EXTERNAL_BASE_URL}/analytics/segments",
+    )
+
+    st.subheader("Non-API routes on the same ALB")
+    st.markdown(
+        "- `/spark-history` — Spark History Server (real job DAGs/stage timings), see Observability tab\n"
+        "- `/airflow` — Airflow UI (`admin`/`admin`), see Observability tab\n"
+        "- `/` — this console"
+    )
+
+    st.subheader("Try it now")
+    st.caption(
+        "Calls the API over the internal cluster network (same as every other tab in this "
+        "console) rather than looping back out through the public ALB, which can hairpin "
+        "unreliably from inside the same cluster it's fronting — the curl examples above are "
+        "what you'd actually run from your own terminal."
+    )
+    if st.button("GET /health"):
+        try:
+            st.json(requests.get(f"{API_BASE_URL}/health", timeout=5).json())
+        except requests.exceptions.RequestException as e:
+            st.error(f"Could not reach the API: {e}")
 
 with tab_model:
     st.header("Baseline vs. XGBoost")
