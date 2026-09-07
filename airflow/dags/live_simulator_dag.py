@@ -32,6 +32,14 @@ with DAG(
         image="784004375291.dkr.ecr.ap-south-1.amazonaws.com/churn-fde-sandbox-api-service:sha-0844cdd-amd64",
         cmds=["python", "-m", "src.data_gen.live_simulator"],
         service_account_name="spark-jobs",  # reuses the S3-read-capable IRSA role; ingest itself is auth'd via bearer token, not IAM
+        # Real bug found by actually triggering this DAG: the "apps" Fargate
+        # profile now requires this label (see modules/eks's Fargate profile
+        # fix, needed so Fargate stops claiming Spark driver/executor pods
+        # meant for Karpenter) — this pod has no Karpenter NodePool of its
+        # own, so without the label it has nowhere to schedule at all:
+        # "0/14 nodes are available ... untolerated taint
+        # {eks.amazonaws.com/compute-type: fargate}".
+        labels={"fargate-scheduled": "true"},
         env_vars={
             "API_BASE_URL": "http://api-service.churn-service.svc.cluster.local",
             "INGEST_TOKEN": "{{ var.value.ingest_token }}",  # set once via `airflow variables set ingest_token <value>` post-deploy
