@@ -104,9 +104,14 @@ resource "aws_iam_role_policy" "spark_jobs" {
         Resource = var.model_registry_bucket_arn
       },
       {
+        # glue:DeleteTable is required for Iceberg's `.createOrReplace()` —
+        # on any run after the first (table already exists), Iceberg's
+        # GlueCatalog does a drop+recreate under the hood, not just
+        # CreateTable. Added proactively rather than discovering it via
+        # another AccessDenied on the second Spark job run.
         Sid      = "GlueCatalogForIceberg"
         Effect   = "Allow"
-        Action   = ["glue:GetTable", "glue:GetTables", "glue:CreateTable", "glue:UpdateTable", "glue:GetDatabase"]
+        Action   = ["glue:GetTable", "glue:GetTables", "glue:CreateTable", "glue:UpdateTable", "glue:DeleteTable", "glue:GetDatabase"]
         Resource = "*" # Glue's resource-level ARNs for tables-not-yet-created are awkward to scope precisely; acceptable for this exercise's single Glue database
       },
       {
