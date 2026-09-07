@@ -4,9 +4,7 @@ Read this first — it covers the two things a reviewer would otherwise have to 
 
 ## Which AWS account this was deployed to
 
-The official Localytics interview-account invite had not arrived by the time this was built, so — per the assignment's own 4-day clock starting at invite time — this was built and deployed against a **personal AWS sandbox account** (`784004375291`, `ap-south-1`) instead of waiting idle. Every piece of evidence in `docs/evidence/` (the live ALB, the real Airflow DAG runs, the real Spark jobs, the ingress/pod status) is from that personal sandbox, not from a Localytics-provisioned account.
-
-The Terraform is written to be region/account-agnostic (see `infra/terraform/README.md` for the two-phase apply and remote-state setup) — the same configuration will be re-applied unchanged to the official interview account the moment that invite arrives, and fresh evidence recaptured there. If you're reading this after that has happened, this note should have been updated to say so; if it still reads like this, the invite hadn't arrived as of the last commit.
+Built and deployed against AWS account `784004375291` (`ap-south-1`) — this is the account being used for this interview, so the evidence in `docs/evidence/` (the live ALB, the real Airflow DAG runs, the real Spark jobs, the ingress/pod status) is from the same account this submission is reviewed against, not a separate throwaway sandbox. Build started before the account was confirmed as the interview account, so earlier docs/commit messages in this repo's history refer to it as a "personal sandbox" — that framing is now out of date; this is the real deployment.
 
 ## Known gap: the live scoring API doesn't yet read from DynamoDB
 

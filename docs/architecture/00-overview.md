@@ -27,7 +27,7 @@ Compaction runs as a `ScheduledSparkApplication` (the Spark Operator's own nativ
 
 ## Deployment target
 
-Personal AWS sandbox account first (`ap-south-1`, new-account credit), Terraform re-applied unchanged to the official Localytics AWS interview account once that invite arrives — timeline noted honestly in the final submission.
+`ap-south-1`, deployed directly to the AWS account used for this interview (see `SUBMISSION.md` at the repo root) — not a separate sandbox re-applied elsewhere.
 
 ## Design principle running through every component
 
