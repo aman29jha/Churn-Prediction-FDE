@@ -1,0 +1,32 @@
+Athena queries against the real Iceberg tables (Glue Catalog: churn_fde_sandbox),
+captured 2026-09-07, all state=SUCCEEDED:
+
+$ aws glue get-tables --database-name churn_fde_sandbox
+5 tables registered: silver_events, rfm_features, churn_scores, rfm_segments, kpi_daily
+(all under s3://.../warehouse/churn_fde_sandbox.db/<table>/ — real Iceberg layout,
+metadata/ + data/ subfolders, not plain flat parquet)
+
+SELECT COUNT(*) FROM churn_fde_sandbox.silver_events        -> 58738
+SELECT COUNT(*) FROM churn_fde_sandbox.rfm_features          -> 1280
+SELECT COUNT(*) FROM churn_fde_sandbox.churn_scores          -> 1280
+SELECT segment, COUNT(*) FROM churn_fde_sandbox.rfm_segments GROUP BY segment
+  Champions:   385
+  Hibernating: 287
+  Lost:        242
+  At Risk:     227
+  Loyal:       139
+  (sums to exactly 1280 — matches rfm_features/churn_scores row count)
+
+SELECT COUNT(*) FROM churn_fde_sandbox.kpi_daily             -> 642
+SELECT event_date, dau, total_revenue, push_open_rate, campaign_click_rate
+  FROM churn_fde_sandbox.kpi_daily ORDER BY dau DESC LIMIT 5
+  2023-11-29 | dau=163 | revenue=45.29 | push_open_rate=0.33 | campaign_click_rate=0.40
+  2023-11-20 | dau=158 | revenue=18.49 | push_open_rate=1.40 | campaign_click_rate=0.00
+  2023-11-08 | dau=158 | revenue=67.15 | push_open_rate=0.80 | campaign_click_rate=0.20
+  2024-01-22 | dau=158 | revenue=5.93  | push_open_rate=0.89 | campaign_click_rate=0.78
+  2023-11-17 | dau=158 | revenue=62.15 | push_open_rate=1.00 | campaign_click_rate=0.30
+
+Row counts match exactly what was independently verified via direct S3/pandas
+reads of the same underlying data in earlier evidence capture — confirming the
+Iceberg tables and the plain-Parquet dual-write are consistent with each other,
+not two diverging representations.
