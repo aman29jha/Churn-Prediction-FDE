@@ -64,7 +64,7 @@ variable "dags_git_repo" {
 }
 
 variable "image_tag" {
-  description = "Git-SHA-based tag for the 3 Docker images already pushed to ECR (see docs/architecture/08-infrastructure.md). Suffixed -amd64: the first push (sha-83887be) was built natively on Apple Silicon (arm64) and crashed on Fargate's amd64 nodes with 'exec format error' — rebuilt with `docker buildx build --platform linux/amd64`. Bumped to sha-e586332-amd64: added real Iceberg-on-Glue table writes (dual-write alongside the existing plain-Parquet output) and implemented the analytics kpi_daily job for real; all 3 images rebuilt under the same tag for a consistent per-commit deploy even though api-service/console source didn't change."
+  description = "Git-SHA-based tag for the 3 Docker images already pushed to ECR (see docs/architecture/08-infrastructure.md). Suffixed -amd64: the first push (sha-83887be) was built natively on Apple Silicon (arm64) and crashed on Fargate's amd64 nodes with 'exec format error' — rebuilt with `docker buildx build --platform linux/amd64`. Bumped to sha-eb0ef5b-amd64: switched Silver/Gold/Analytics Iceberg writes to real MERGE INTO upserts (was createOrReplace), added the analytics dashboard's Athena-backed endpoints to api-service, and added an Airflow UI link to the console; all 3 images rebuilt under the same tag for a consistent per-commit deploy."
   type        = string
-  default     = "sha-e586332-amd64"
+  default     = "sha-eb0ef5b-amd64"
 }
