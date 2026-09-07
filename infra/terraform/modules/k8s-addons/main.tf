@@ -23,25 +23,52 @@ resource "kubernetes_config_map" "airflow_webserver_nginx" {
     namespace = "churn-service"
   }
   data = {
-    "default.conf" = <<-EOT
-      server {
-        listen 8081;
+    # A FULL nginx.conf (mounted over /etc/nginx/nginx.conf, not just a
+    # conf.d snippet) — real bug found from actually deploying: Airflow's
+    # chart applies a restrictive non-root PodSecurityContext to every
+    # container in this pod, sidecar included. Plain nginx:1.27-alpine's
+    # default entrypoint tries to write its pid file, logs, and temp dirs
+    # under /var/{run,log,cache}/nginx, all owned by root — crashed with
+    # `mkdir() "/var/cache/nginx/client_temp" failed (13: Permission
+    # denied)`. Every writable path nginx needs is redirected to /tmp,
+    # which stays world-writable (1777) regardless of the UID a container
+    # actually runs as.
+    "nginx.conf" = <<-EOT
+      worker_processes 1;
+      pid /tmp/nginx.pid;
+      error_log /tmp/nginx_error.log warn;
 
-        location /airflow/ {
-          rewrite ^/airflow/(.*)$ /$1 break;
-          proxy_pass http://127.0.0.1:8080;
-          proxy_set_header Host $host;
-          proxy_set_header X-Forwarded-Prefix /airflow;
-          proxy_set_header X-Forwarded-Proto $scheme;
-          proxy_redirect off;
-        }
+      events {
+        worker_connections 1024;
+      }
 
-        location = /airflow {
-          return 301 /airflow/;
-        }
+      http {
+        client_body_temp_path /tmp/client_temp;
+        proxy_temp_path       /tmp/proxy_temp;
+        fastcgi_temp_path     /tmp/fastcgi_temp;
+        uwsgi_temp_path       /tmp/uwsgi_temp;
+        scgi_temp_path        /tmp/scgi_temp;
+        access_log            /tmp/nginx_access.log;
 
-        location / {
-          return 404;
+        server {
+          listen 8081;
+
+          location /airflow/ {
+            rewrite ^/airflow/(.*)$ /$1 break;
+            proxy_pass http://127.0.0.1:8080;
+            proxy_set_header Host $host;
+            proxy_set_header X-Forwarded-Prefix /airflow;
+            proxy_set_header X-Forwarded-Proto $scheme;
+            proxy_redirect off;
+          }
+
+          location = /airflow {
+            return 301 /airflow/;
+          }
+
+          location / {
+            return 404;
+          }
         }
       }
     EOT
@@ -506,7 +533,7 @@ resource "helm_release" "airflow" {
           image = "nginx:1.27-alpine"
           ports = [{ containerPort = 8081 }]
           volumeMounts = [
-            { name = "nginx-conf", mountPath = "/etc/nginx/conf.d" },
+            { name = "nginx-conf", mountPath = "/etc/nginx/nginx.conf", subPath = "nginx.conf" },
           ]
           resources = {
             requests = { cpu = "50m", memory = "64Mi" }
