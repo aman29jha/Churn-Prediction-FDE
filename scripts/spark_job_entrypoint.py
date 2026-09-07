@@ -73,6 +73,20 @@ def _write_iceberg(spark: SparkSession, df: DataFrame, iceberg_table: str, merge
         print(f"[{row_label}] bootstrapped new Iceberg table {iceberg_table} with {df.count()} rows")
         return
 
+    # Schema evolution: a column added to this job's output after the
+    # target table was first bootstrapped (e.g. this session's run_date
+    # addition to Gold) would otherwise fail MERGE with "cannot resolve
+    # <col> in MERGE command" — real failure hit live when rfm_features/
+    # churn_scores/rfm_segments (bootstrapped before run_date existed)
+    # were re-merged. Iceberg supports additive schema evolution; widen
+    # the target first so the MERGE below always sees every source column.
+    existing_cols = set(spark.table(iceberg_table).columns)
+    new_cols = [c for c in df.columns if c not in existing_cols]
+    if new_cols:
+        add_cols_sql = ", ".join(f"{c} {df.schema[c].dataType.simpleString()}" for c in new_cols)
+        spark.sql(f"ALTER TABLE {iceberg_table} ADD COLUMNS ({add_cols_sql})")
+        print(f"[{row_label}] evolved {iceberg_table} schema, added columns: {new_cols}")
+
     temp_view = f"_merge_source_{row_label}_{abs(hash(iceberg_table))}"
     df.createOrReplaceTempView(temp_view)
     match_cond = " AND ".join(f"target.{k} = source.{k}" for k in merge_keys)
