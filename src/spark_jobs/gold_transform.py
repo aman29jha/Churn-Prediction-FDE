@@ -24,6 +24,7 @@ from pathlib import Path
 import pandas as pd
 import xgboost as xgb
 from pyspark.sql import DataFrame, SparkSession
+from pyspark.sql import functions as F
 
 from src.features.rfm import compute_label, compute_rfm_features
 from src.modeling.baseline import RFMQuintileBaseline
@@ -51,8 +52,19 @@ def run_gold_transform(
 
     segments = baseline.score(features)
 
+    # run_date makes each table's Iceberg write a genuine upsert keyed on
+    # (customer_id, run_date) rather than a blind overwrite — see
+    # scripts/spark_job_entrypoint.py's MERGE INTO logic. Same-day re-runs
+    # update in place (no duplicate rows); different days accumulate real
+    # history, satisfying docs/architecture/07-analytics.md's stated
+    # prerequisite for segment_migration/cohort_retention ("Gold tables
+    # must retain history, append-only, partitioned by run_date").
+    run_date = as_of.date().isoformat()
+
     return {
-        "rfm_features": spark.createDataFrame(features),
-        "churn_scores": spark.createDataFrame(features_labeled[["customer_id", "churn_probability", "churn"]]),
-        "rfm_segments": spark.createDataFrame(segments),
+        "rfm_features": spark.createDataFrame(features).withColumn("run_date", F.lit(run_date)),
+        "churn_scores": spark.createDataFrame(
+            features_labeled[["customer_id", "churn_probability", "churn"]]
+        ).withColumn("run_date", F.lit(run_date)),
+        "rfm_segments": spark.createDataFrame(segments).withColumn("run_date", F.lit(run_date)),
     }

@@ -208,6 +208,10 @@ resource "kubernetes_deployment_v1" "console" {
             value = "/spark-history"
           }
           env {
+            name  = "AIRFLOW_PATH"
+            value = "/airflow"
+          }
+          env {
             name  = "CLOUDWATCH_DASHBOARD_URL"
             value = "https://${var.aws_region}.console.aws.amazon.com/cloudwatch/home?region=${var.aws_region}#dashboards:name=${var.dashboard_name}"
           }
@@ -423,6 +427,29 @@ resource "kubernetes_service_v1" "spark_history" {
   }
 }
 
+# Routes to the Airflow webserver pod's nginx-proxy sidecar (see
+# modules/k8s-addons's kubernetes_config_map.airflow_webserver_nginx and
+# the airflow helm_release's webserver.extraContainers) — a separate,
+# hand-written Service rather than the chart's own generated one, since
+# the chart's Service targets the webserver container's port (8080)
+# directly and doesn't know about this sidecar. Selector matches the
+# chart's own pod labels exactly (tier/component/release), not a label
+# this Terraform config controls.
+resource "kubernetes_service_v1" "airflow_webserver_proxy" {
+  metadata {
+    name      = "airflow-webserver-proxy"
+    namespace = var.namespace
+  }
+  spec {
+    selector = { tier = "airflow", component = "webserver", release = "airflow" }
+    port {
+      port        = 80
+      target_port = 8081
+    }
+    type = "ClusterIP"
+  }
+}
+
 # --- Ingress: single ALB routing to both services ---
 # target-type=ip is REQUIRED for Fargate — pods have no direct node IPs
 # for the ALB to target the instance-mode way.
@@ -476,6 +503,16 @@ resource "kubernetes_ingress_v1" "main" {
           backend {
             service {
               name = kubernetes_service_v1.spark_history.metadata[0].name
+              port { number = 80 }
+            }
+          }
+        }
+        path {
+          path      = "/airflow"
+          path_type = "Prefix"
+          backend {
+            service {
+              name = kubernetes_service_v1.airflow_webserver_proxy.metadata[0].name
               port { number = 80 }
             }
           }

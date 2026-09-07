@@ -9,6 +9,45 @@ resource "kubernetes_namespace" "churn_service" {
   }
 }
 
+# nginx sidecar on the Airflow webserver pod strips the /airflow prefix
+# before proxying locally — same real ALB limitation as the Spark History
+# Server fix in modules/workloads (ALB can't rewrite paths; nginx-ingress
+# could, ALB can't). Airflow's own enable_proxy_fix (chart default: True)
+# handles the rest via the X-Forwarded-Prefix header this config sets, so
+# Flask's url_for() generates correctly-prefixed links without needing
+# AIRFLOW__WEBSERVER__BASE_URL set (that's mainly for absolute links in
+# outbound emails, which this deployment never sends).
+resource "kubernetes_config_map" "airflow_webserver_nginx" {
+  metadata {
+    name      = "airflow-webserver-nginx-conf"
+    namespace = "churn-service"
+  }
+  data = {
+    "default.conf" = <<-EOT
+      server {
+        listen 8081;
+
+        location /airflow/ {
+          rewrite ^/airflow/(.*)$ /$1 break;
+          proxy_pass http://127.0.0.1:8080;
+          proxy_set_header Host $host;
+          proxy_set_header X-Forwarded-Prefix /airflow;
+          proxy_set_header X-Forwarded-Proto $scheme;
+          proxy_redirect off;
+        }
+
+        location = /airflow {
+          return 301 /airflow/;
+        }
+
+        location / {
+          return 404;
+        }
+      }
+    EOT
+  }
+}
+
 # --- AWS Load Balancer Controller: provisions the ALB for our ingress ---
 
 data "aws_iam_policy_document" "lb_controller_assume" {
@@ -457,6 +496,32 @@ resource "helm_release" "airflow" {
         requests = { cpu = "500m", memory = "1Gi" }
         limits   = { cpu = "1", memory = "2Gi" }
       }
+      # See kubernetes_config_map.airflow_webserver_nginx above for why:
+      # exposes Airflow's UI at /airflow through the same ALB the rest of
+      # this service already uses (console/API/Spark History), instead of
+      # kubectl port-forward-only access.
+      extraContainers = [
+        {
+          name  = "nginx-proxy"
+          image = "nginx:1.27-alpine"
+          ports = [{ containerPort = 8081 }]
+          volumeMounts = [
+            { name = "nginx-conf", mountPath = "/etc/nginx/conf.d" },
+          ]
+          resources = {
+            requests = { cpu = "50m", memory = "64Mi" }
+            limits   = { cpu = "100m", memory = "128Mi" }
+          }
+        },
+      ]
+      extraVolumes = [
+        {
+          name = "nginx-conf"
+          configMap = {
+            name = kubernetes_config_map.airflow_webserver_nginx.metadata[0].name
+          }
+        },
+      ]
     }
     postgresql = {
       enabled = false # RDS instead — see modules/database and the kubernetes_secret above

@@ -23,6 +23,7 @@ API_BASE_URL = os.environ.get("API_BASE_URL", "http://127.0.0.1:8811")
 INGEST_TOKEN = os.environ.get("INGEST_TOKEN", "local-dev-token")
 CONSOLE_PASSWORD = os.environ.get("CONSOLE_PASSWORD")
 SPARK_HISTORY_PATH = os.environ.get("SPARK_HISTORY_PATH", "/spark-history")
+AIRFLOW_PATH = os.environ.get("AIRFLOW_PATH", "/airflow")
 CLOUDWATCH_DASHBOARD_URL = os.environ.get("CLOUDWATCH_DASHBOARD_URL", "")
 
 st.set_page_config(page_title="Churn Prediction — Reviewer Console", layout="wide")
@@ -193,6 +194,17 @@ with tab_observability:
     )
     st.markdown(f"[Open Spark History Server directly]({SPARK_HISTORY_PATH})")
     st.components.v1.iframe(SPARK_HISTORY_PATH, height=600, scrolling=True)
+
+    st.divider()
+
+    st.subheader("Airflow")
+    st.caption(
+        "Real DAG run history for medallion_pipeline_dag, analytics_dag, training_dag, and "
+        f"live_simulator_dag — served on the same ALB at `{AIRFLOW_PATH}`. Login required "
+        "(admin/admin — see SUBMISSION.md); the login form doesn't render well inside an "
+        "iframe, so this is a direct link rather than an embed."
+    )
+    st.markdown(f"[Open Airflow directly]({AIRFLOW_PATH})")
 
     st.divider()
 
