@@ -498,6 +498,22 @@ resource "kubernetes_ingress_v1" "main" {
           }
         }
         path {
+          # Real bug found live: the console's new Analytics tab called
+          # /analytics/kpi_daily and /analytics/segments (both real
+          # api-service routes) through the ALB and got Streamlit's own
+          # HTML back instead of JSON — this path had no explicit ingress
+          # rule, so it fell through to the "/" catch-all pointed at the
+          # console.
+          path      = "/analytics"
+          path_type = "Prefix"
+          backend {
+            service {
+              name = kubernetes_service_v1.api_service.metadata[0].name
+              port { number = 80 }
+            }
+          }
+        }
+        path {
           path      = "/spark-history"
           path_type = "Prefix"
           backend {

@@ -80,15 +80,22 @@ resource "aws_iam_role_policy" "api_service" {
         Resource = "*"
       },
       {
+        # Real bug found live: the first actual query attempt failed with
+        # "InvalidRequestException: Unable to verify/create output
+        # bucket" — Athena's StartQueryExecution calls s3:GetBucketLocation
+        # on the RESULT bucket to verify its region before running
+        # anything, independent of the GetObject/PutObject/ListBucket
+        # already granted below for the actual result files.
         Sid      = "ReadIcebergWarehouseForAthena"
         Effect   = "Allow"
-        Action   = ["s3:GetObject", "s3:ListBucket"]
+        Action   = ["s3:GetObject", "s3:ListBucket", "s3:GetBucketLocation"]
         Resource = [var.data_lake_bucket_arn, "${var.data_lake_bucket_arn}/warehouse/*"]
       },
       {
-        # s3:ListBucket is bucket-level (already granted, bare bucket ARN,
-        # in ReadIcebergWarehouseForAthena above) — this is object-level
-        # only, for the actual result file GetObject/PutObject.
+        # s3:ListBucket/GetBucketLocation are bucket-level (already
+        # granted, bare bucket ARN, in ReadIcebergWarehouseForAthena above)
+        # — this is object-level only, for the actual result file
+        # GetObject/PutObject.
         Sid      = "AthenaQueryResultStaging"
         Effect   = "Allow"
         Action   = ["s3:GetObject", "s3:PutObject"]
