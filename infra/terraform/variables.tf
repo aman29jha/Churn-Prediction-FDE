@@ -69,7 +69,7 @@ variable "dags_git_repo" {
 }
 
 variable "image_tag" {
-  description = "Git-SHA-based tag for the 3 Docker images already pushed to ECR (see docs/architecture/08-infrastructure.md). Suffixed -amd64: the first push (sha-83887be) was built natively on Apple Silicon (arm64) and crashed on Fargate's amd64 nodes with 'exec format error' — rebuilt with `docker buildx build --platform linux/amd64`. Bumped to sha-00f923f-amd64: fixed training_dag (api-service image never had scripts/ or scikit-learn/matplotlib; the DAG itself was still paused from earlier in this repo's history), and moved Silver/Gold retries to the Airflow task level instead of the Spark Operator's in-place restart (a known Operator timing race was causing spurious 'failed' DAG runs in Airflow's history even when the underlying job later succeeded)."
+  description = "Git-SHA-based tag for the 3 Docker images already pushed to ECR (see docs/architecture/08-infrastructure.md). Suffixed -amd64: the first push (sha-83887be) was built natively on Apple Silicon (arm64) and crashed on Fargate's amd64 nodes with 'exec format error' — rebuilt with `docker buildx build --platform linux/amd64`. Bumped to sha-359d713-amd64: fixed two real bugs found checking the Analytics dashboard's own numbers against the known 1,280-customer population (/analytics/segments summed across all historical run_dates instead of the latest snapshot; kpi_daily's push_open_rate/campaign_click_rate used a same-day ratio that could exceed 100%, redefined as cumulative), plus a real SparkJobFailure CloudWatch metric the dashboard's own panel title had promised but nothing ever emitted."
   type        = string
-  default     = "sha-00f923f-amd64"
+  default     = "sha-359d713-amd64"
 }
