@@ -186,8 +186,18 @@ def analytics_segments(request: Request):
     queried live via Athena, not the training-time snapshot."""
     _check_rate_limit(request.client.host if request.client else "unknown")
     try:
+        # Real bug found checking this chart's own numbers against the
+        # known customer population: rfm_segments is append-only,
+        # partitioned by run_date (see docs/architecture/01-data-platform.md
+        # — that's the whole point, it's what makes segment-migration
+        # analysis possible), so an unfiltered COUNT(*) sums every
+        # historical run_date together — segment totals came back 2x the
+        # real 1,280-customer population once a second run_date existed.
+        # Scope to the latest snapshot only.
         rows = run_athena_query(
-            "SELECT segment, COUNT(*) as customers FROM rfm_segments GROUP BY segment ORDER BY customers DESC"
+            "SELECT segment, COUNT(*) as customers FROM rfm_segments "
+            "WHERE run_date = (SELECT MAX(run_date) FROM rfm_segments) "
+            "GROUP BY segment ORDER BY customers DESC"
         )
     except Exception as exc:
         raise HTTPException(status_code=502, detail=f"Athena query failed: {exc}") from exc

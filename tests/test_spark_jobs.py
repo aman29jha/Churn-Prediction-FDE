@@ -141,9 +141,20 @@ def test_kpi_daily_matches_manual_pandas_aggregation(bronze_df):
     assert row["dau"] == expected_dau
     assert row["total_revenue"] == pytest.approx(expected_revenue)
 
-    # push_open_rate must be a real ratio, not always 0/1 — proves the
-    # push_sent/push_open join+division actually happened, not a stub.
+    # push_open_rate/campaign_click_rate are cumulative (running-total)
+    # ratios, not a same-day ratio — a real bug found live: a push sent
+    # late one day is routinely opened the next, so a strict same-day
+    # ratio spikes past 100% on low-volume days even though sends exceed
+    # opens in aggregate. Hand-verify the cumulative definition directly
+    # for the sample day, and confirm every day stays in [0,1] (only
+    # guaranteed under the cumulative definition, not the same-day one).
+    up_to_sample_day = silver_pd[silver_pd["event_date"] <= sample_day]
+    expected_cum_sent = (up_to_sample_day["event_type"] == "push_sent").sum()
+    expected_cum_open = (up_to_sample_day["event_type"] == "push_open").sum()
+    expected_rate = expected_cum_open / expected_cum_sent if expected_cum_sent > 0 else 0.0
+    assert row["push_open_rate"] == pytest.approx(expected_rate)
     assert kpi["push_open_rate"].between(0, 1).all()
+    assert kpi["campaign_click_rate"].between(0, 1).all()
 
 
 def test_compaction_reduces_partition_count(spark, raw_events_pd):

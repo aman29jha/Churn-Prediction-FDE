@@ -251,7 +251,13 @@ with tab_analytics:
                 st.markdown("**Daily Revenue**")
                 st.line_chart(kpi_df["total_revenue"])
 
-                st.markdown("**Push Open Rate / Campaign Click Rate**")
+                st.markdown("**Push Open Rate / Campaign Click Rate (cumulative)**")
+                st.caption(
+                    "Running-total rate, not a same-day ratio — a push sent late one day is "
+                    "routinely opened the next, so a strict same-day ratio can spike past 100% "
+                    "on a low-volume day. Cumulative is mathematically sound here (real bug found "
+                    "and fixed live — see SUBMISSION.md)."
+                )
                 st.line_chart(kpi_df[["push_open_rate", "campaign_click_rate"]])
 
                 with st.expander(f"Raw kpi_daily rows ({len(kpi_df)} days)"):

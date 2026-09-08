@@ -16,7 +16,7 @@ The churn-scoring Gold job runs on the event-driven trigger (new data arrives ->
 
 ## Output tables
 
-**`gold.kpi_daily`** — one row per day: DAU, WAU/MAU, total/average revenue, new customers, aggregate push-open rate, aggregate campaign-click rate. The general "is the business healthy" trend view.
+**`gold.kpi_daily`** — one row per day: DAU, WAU/MAU, total/average revenue, new customers, cumulative (running-total) push-open rate, cumulative campaign-click rate. The general "is the business healthy" trend view. Push open/click rates are deliberately cumulative, not same-day ratios — a push sent late one day is routinely opened the next, so a strict same-day ratio can exceed 100% on a low-volume day even though sends exceed opens in aggregate (found live, see `SUBMISSION.md`); the cumulative definition is both mathematically sound here and the more standard way to chart an engagement trend anyway.
 
 **`gold.segment_migration`** — a transition matrix between consecutive `run_date`s: how many customers moved from each RFM segment to each other segment (e.g. `At Risk -> Lost`, `Champions -> Loyal`) between runs. This is what makes the RFM segmentation (see [modeling.md](modeling.md)) genuinely useful as a *monitoring* tool, not just a point-in-time label — a marketer can see the "Lost" segment growing week over week before it shows up in aggregate churn numbers.
 
