@@ -316,6 +316,14 @@ with tab_lookup:
             response = requests.get(f"{API_BASE_URL}/score/{customer_id}", timeout=5)
             if response.status_code == 200:
                 result = response.json()
+                source = result.get("source", "cache")
+                if source == "dynamodb":
+                    st.success("Live read from DynamoDB — this reflects the most recent gold_transform run.")
+                else:
+                    st.info(
+                        "Served from the cold-start JSON snapshot — DynamoDB has no row for this "
+                        "customer yet (gold_transform hasn't written one, e.g. before its first run)."
+                    )
                 col1, col2 = st.columns(2)
                 col1.metric("Churn probability", f"{result['churn_probability']:.1%}")
                 col2.metric("RFM segment", result["rfm_segment"])

@@ -18,6 +18,8 @@ This gives us: prompt processing when there's a real burst of activity, no waste
 
 This full chain is genuinely deployed (`infra/terraform/modules/messaging`) and, as of `src/service/app.py` actually writing real Bronze objects (previously a local-file stand-in — see `SUBMISSION.md`), verified firing end-to-end from a live `/events/ingest` call through to a `medallion_pipeline_dag` run triggered with zero manual intervention.
 
+A second real bug surfaced the first time this Lambda was ever actually invoked (it had never fired before, since Bronze never got real writes): it sent `Authorization: Bearer <token>`, but Airflow's REST API auth backend defaults to `session` (cookie-based) — a bearer token can never satisfy that, regardless of its value. Fixed by enabling `basic_auth` alongside `session` on the webserver and switching the Lambda to send real Basic-scheme credentials for the chart's own stock `admin`/`admin` user.
+
 ## Spark Operator CRDs
 
 We installed the **Spark Operator** (a separate controller + CRDs + admission webhook) rather than using plain `spark-submit`, for declarative job specs and built-in status/retry/history:
