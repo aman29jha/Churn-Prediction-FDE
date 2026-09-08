@@ -45,8 +45,7 @@ spec:
     spark.sql.catalog.glue_catalog.warehouse: "s3://churn-fde-sandbox-data-lake-784004375291/warehouse/"
   restartPolicy:
     type: OnFailure
-    onFailureRetries: 2
-    onFailureRetryInterval: 30
+    onFailureRetries: 0
   # labels is REQUIRED here (even empty) — see silver spec for why: the
   # Airflow SparkKubernetesOperator crashes with KeyError: 'labels' without it.
   driver:

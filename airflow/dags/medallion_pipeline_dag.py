@@ -20,8 +20,31 @@ concurrently against the same Iceberg tables is a correctness risk on
 its own (overlapping MERGE INTOs) — serializing runs is the right fix
 either way, matching the pattern already used in live_simulator_dag and
 training_dag.
+
+Task-level retries, not the SparkApplication's own restartPolicy: a
+second real bug, independent of the concurrency one above — a SINGLE,
+non-concurrent Silver submission still occasionally hit the same
+"configmap not found" driver-mount race (a known Spark Operator timing
+issue: the driver pod's admission webhook can schedule it fractionally
+before the controller's own async ConfigMap-creation call lands). The
+Operator's in-place restartPolicy retries the SAME SparkApplication
+object via a PENDING_RERUN mutation — but Airflow's own status polling
+sometimes observes the transient FAILED state in between and gives up,
+marking the Airflow task (and the whole DAG run) "failed" even though
+the SparkApplication goes on to succeed under its own restarts a few
+minutes later, orphaned from Airflow's perspective. Functionally the
+data ends up correct either way, but Airflow's own DAG run history
+showing spurious failures undermines the exact "this looks like a real,
+trustworthy production pipeline" bar this whole fix pass is about.
+Fixed by moving retries to the Airflow task level instead (retries=3
+below; specs/{silver,gold}_spark_application.yaml's own
+onFailureRetries set to 0) — each Airflow retry submits a genuinely NEW
+SparkApplication object (Kubernetes generateName gives it a fresh
+random suffix), sidestepping the specific PENDING_RERUN-mutation race
+entirely, and Airflow's run history now accurately reflects what
+actually happened.
 """
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from airflow import DAG
 from airflow.providers.cncf.kubernetes.operators.spark_kubernetes import SparkKubernetesOperator
@@ -41,6 +64,8 @@ with DAG(
         application_file="specs/silver_spark_application.yaml",
         kubernetes_conn_id="kubernetes_default",
         do_xcom_push=False,
+        retries=3,
+        retry_delay=timedelta(seconds=30),
     )
 
     gold = SparkKubernetesOperator(
@@ -49,6 +74,8 @@ with DAG(
         application_file="specs/gold_spark_application.yaml",
         kubernetes_conn_id="kubernetes_default",
         do_xcom_push=False,
+        retries=3,
+        retry_delay=timedelta(seconds=30),
     )
 
     silver >> gold
