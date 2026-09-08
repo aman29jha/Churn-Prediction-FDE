@@ -101,9 +101,24 @@ User asked directly whether the dashboards are actually clear and correct. Check
 
 Also added a real `SparkJobFailure` CloudWatch metric — the dashboard's own "Failure modes" panel title had promised it since it was first written, but nothing anywhere ever emitted it.
 
-**Worth knowing before a demo**: the segments chart now shows almost entirely "Lost"/"Hibernating" for today's snapshot. This is the rolling `as_of=now()` fix working as intended, not a bug — the synthetic dataset's real activity window is 2022–2024, so scored against actual wall-clock time in 2026, nearly every customer with no live-simulator-trickle activity genuinely looks stale by RFM recency. Worth a one-line explanation if a reviewer asks why churn risk looks universally high.
-
 **Also hit again during this pass**: the ECR docker-login token expired mid-deployment (12h TTL, long session) — caught it from a `denied: Your authorization token has expired` in the build output (the earlier task-notification had misleadingly reported success, since the tool's own exit code was 0 even though the underlying push failed — a process gap worth remembering: grep build output for the actual error, don't just trust the notification). Re-authenticated and redeployed cleanly.
+
+## The most important bug this session found: live events were never actually reaching Silver
+
+The previous section's note said the near-universal "Lost"/"Hibernating" segment skew was the rolling `as_of=now()` fix "working as intended" — that explanation was wrong, stated in good faith but never actually verified against Silver's own data. It was a symptom of a real, separate, more serious bug, found only while preparing to demo the system live and specifically checking whether a customer's score would visibly change in response to fresh activity.
+
+**Root cause**: fixing an earlier Hive-partition conflict (see above) moved live ingest writes to `bronze/live/batch-*.json` — flat filenames, but one directory level below the bootstrap files that sit directly under `bronze/`. Spark's directory JSON reader does **not** descend into subdirectories by default (no `recursiveFileLookup`, and `live` isn't Hive-partition-style so partition discovery doesn't trigger either). `silver_transform` kept reporting `success` on every single run — dozens of them, across many hours — while silently never once reading a live event. Confirmed directly: `silver_events`' `MAX(timestamp)` was stuck at `2024-06-01` the entire time, and the freshest customer in DynamoDB (by `recency_days`) still showed **829 days** of staleness despite hours of "successful" live-simulator activity supposedly flowing through the pipeline.
+
+This means every "MERGE idempotency" and "fresh data" claim verified earlier in this session — real, and mechanically correct about what was being tested — was actually being tested against the same static 2024 bootstrap dataset the whole time. The mechanics (MERGE INTO not duplicating rows, Silver→Gold succeeding, DynamoDB being written) were genuinely proven. What wasn't true, until this fix, was that *live* data was ever part of what got proven.
+
+**Fixed** (commit `1633705`): ingest now writes directly under `bronze/` (`bronze/live-<timestamp>-<uuid>.json`), matching exactly where the bootstrap files already sit. The 95 stranded batches that had accumulated in `bronze/live/` during the outage were moved up, not discarded, so `silver_transform` picked up everything that was missed in one pass rather than losing it.
+
+**Verified live, immediately after the fix deployed**:
+- `silver_events`: `MAX(timestamp)` jumped from `2024-06-01` to `2026-09-08`, real time; total count rose from 58,738 to 61,124 as the backlog was absorbed.
+- A specific customer (`syn_cust_00687`) that received a fresh session event went from **~99.8% churn probability to 0.4%** — `recency_days` dropped from ~830 to 0.017 (about 24 minutes) — and the SHAP explanation correctly attributes the drop to recency. This is now the centerpiece of the live-demo runbook.
+- The segment mix, previously ~100% Lost/Hibernating, is now genuinely varied: Lost 503, At Risk 355, Loyal 154, Champions 140, Hibernating 128 — summing to exactly 1,280.
+- MERGE idempotency re-verified post-fix with a second trigger: `rfm_features`/`churn_scores`/`rfm_segments` stayed exactly at 2,560 rows (1,280 customers × 2 real `run_date`s), `silver_events` grew only by genuinely new events between triggers (+70, not duplicates).
+- One more straggler file (written during the brief rollout window before the fixed pod fully replaced the old one) was found in `bronze/live/` and cleaned up the same way.
 
 ## Everything else
 
