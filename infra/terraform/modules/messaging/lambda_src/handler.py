@@ -42,37 +42,71 @@ _credentials = base64.b64encode(f"{AIRFLOW_API_USERNAME}:{AIRFLOW_API_PASSWORD}"
 _url = urlsplit(AIRFLOW_API_URL)
 
 
-def _trigger_dag_run() -> int:
+def _airflow_request(method: str, path: str, body: str | None = None) -> tuple[int, bytes]:
     conn = HTTPConnection(_url.hostname, _url.port or 80, timeout=10)
     try:
         conn.request(
-            "POST",
-            f"{_url.path}/dags/{DAG_ID}/dagRuns",
-            body=json.dumps({}),
+            method,
+            path,
+            body=body,
             headers={
                 "Authorization": f"Basic {_credentials}",
                 "Content-Type": "application/json",
             },
         )
         response = conn.getresponse()
-        response.read()
-        return response.status
+        return response.status, response.read()
     finally:
         conn.close()
 
 
-def handler(event, context):
-    message_count = len(event.get("Records", []))
-    print(f"Triggering {DAG_ID}: {message_count} SQS message(s) in this batch")
-
+def _with_retries(method: str, path: str, body: str | None = None) -> tuple[int, bytes]:
     last_error = None
     for attempt in range(3):
         try:
-            status = _trigger_dag_run()
-            print(f"Airflow responded: {status}")
-            return {"triggered": True, "message_count": message_count}
+            return _airflow_request(method, path, body)
         except OSError as exc:
             last_error = exc
             print(f"Attempt {attempt + 1}/3 failed: {exc}")
             time.sleep(0.5 * (attempt + 1))
     raise last_error
+
+
+def _has_active_run() -> bool:
+    """Real problem found live-running this Lambda for hours: every ~10min
+    live_simulator_dag batch fires its own trigger, and medallion_pipeline_dag's
+    max_active_runs=1 just queues them up — 8+ deep after a few hours, each
+    one genuinely redundant since silver_transform re-scans the WHOLE Bronze
+    prefix every run, not just the object that triggered it. A run that's
+    already queued or running will pick up this batch's data too once it
+    actually executes, so triggering again buys nothing and only grows the
+    backlog. Fails open (triggers anyway) if the check itself fails — a
+    duplicate queued run is harmless, a silently-dropped real trigger isn't.
+    """
+    try:
+        status, body = _with_retries(
+            "GET", f"{_url.path}/dags/{DAG_ID}/dagRuns?limit=25&order_by=-execution_date"
+        )
+        if status != 200:
+            return False
+        runs = json.loads(body).get("dag_runs", [])
+        return any(r["state"] in ("queued", "running") for r in runs)
+    except Exception as exc:
+        print(f"Active-run check failed, triggering anyway: {exc}")
+        return False
+
+
+def handler(event, context):
+    message_count = len(event.get("Records", []))
+
+    if _has_active_run():
+        print(
+            f"{DAG_ID} already has a queued/running run — skipping trigger for this batch "
+            f"({message_count} SQS message(s)); the pending run will include this data too."
+        )
+        return {"triggered": False, "reason": "already_active", "message_count": message_count}
+
+    print(f"Triggering {DAG_ID}: {message_count} SQS message(s) in this batch")
+    status, _ = _with_retries("POST", f"{_url.path}/dags/{DAG_ID}/dagRuns", json.dumps({}))
+    print(f"Airflow responded: {status}")
+    return {"triggered": True, "message_count": message_count}
