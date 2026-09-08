@@ -173,6 +173,19 @@ resource "aws_iam_role_policy" "spark_jobs" {
         Effect   = "Allow"
         Action   = ["dynamodb:PutItem", "dynamodb:BatchWriteItem"]
         Resource = var.customer_scores_table_arn
+      },
+      # Real gap found checking the CloudWatch dashboard's own "Failure
+      # modes" panel: its title promises "Spark job failures" but nothing
+      # anywhere ever emitted that metric — same class of bug as the
+      # api-service PublishCustomMetrics grant below fixed for the
+      # Auth/Rate-Limiting/Observability panels. Lets
+      # scripts/spark_job_entrypoint.py emit SparkJobFailure on a real
+      # exception before re-raising it.
+      {
+        Sid      = "PublishSparkJobMetrics"
+        Effect   = "Allow"
+        Action   = ["cloudwatch:PutMetricData"]
+        Resource = "*"
       }
     ]
   })

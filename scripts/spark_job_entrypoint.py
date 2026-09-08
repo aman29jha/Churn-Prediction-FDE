@@ -188,6 +188,44 @@ def main():
     spark = build_local_spark_session(f"{args.job}-job")
     catalog_db = args.iceberg_catalog_db
 
+    try:
+        _run_job(args, spark, catalog_db)
+    except Exception:
+        # Real gap found checking the CloudWatch dashboard's own "Failure
+        # modes" panel: its title promised "Spark job failures" but no
+        # metric anywhere ever tracked that. This catches real
+        # application-level failures (bad input schema, a permissions
+        # error mid-run, a genuine bug) — not pod-scheduling-level
+        # failures where this Python process never gets to start at all
+        # (e.g. the ConfigMap-mount race documented in
+        # medallion_pipeline_dag.py), which need Airflow/K8s-level
+        # observability instead, a real gap not closed here. Re-raises
+        # unconditionally: this is additive telemetry, never swallows
+        # the actual failure Airflow/the Spark Operator need to see.
+        _put_metric_safe("SparkJobFailure", {"JobType": args.job})
+        raise
+    finally:
+        spark.stop()
+
+
+def _put_metric_safe(name: str, dimensions: dict[str, str]) -> None:
+    try:
+        import boto3
+
+        boto3.client("cloudwatch").put_metric_data(
+            Namespace="ChurnService",
+            MetricData=[{
+                "MetricName": name,
+                "Value": 1.0,
+                "Unit": "Count",
+                "Dimensions": [{"Name": k, "Value": v} for k, v in dimensions.items()],
+            }],
+        )
+    except Exception as exc:
+        print(f"Failed to publish {name} metric (non-fatal): {exc}")
+
+
+def _run_job(args, spark: SparkSession, catalog_db: str | None) -> None:
     if args.job == "silver":
         # multiLine handles a pretty-printed JSON array (like
         # data/synthetic/synthetic_events.json); real Bronze in production
@@ -263,8 +301,6 @@ def main():
             f"{catalog_db}.kpi_daily" if catalog_db else None,
             ["event_date"], "analytics",
         )
-
-    spark.stop()
 
 
 if __name__ == "__main__":

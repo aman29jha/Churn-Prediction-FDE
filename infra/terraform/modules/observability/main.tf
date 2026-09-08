@@ -107,7 +107,13 @@ resource "aws_cloudwatch_dashboard" "main" {
           region = var.aws_region
           metrics = [
             ["AWS/DynamoDB", "ThrottledRequests", "TableName", var.customer_scores_table_name, { "stat" : "Sum" }],
-            ["AWS/SQS", "ApproximateNumberOfMessagesVisible", "QueueName", "${var.project}-${var.environment}-bronze-data-arrived-dlq", { "stat" : "Maximum" }]
+            ["AWS/SQS", "ApproximateNumberOfMessagesVisible", "QueueName", "${var.project}-${var.environment}-bronze-data-arrived-dlq", { "stat" : "Maximum" }],
+            # Real gap this closes: the panel title has always promised
+            # "Spark job failures" but nothing ever emitted that metric —
+            # scripts/spark_job_entrypoint.py now does, per job type.
+            ["ChurnService", "SparkJobFailure", "JobType", "silver", { "stat" : "Sum" }],
+            ["ChurnService", "SparkJobFailure", "JobType", "gold", { "stat" : "Sum" }],
+            ["ChurnService", "SparkJobFailure", "JobType", "analytics", { "stat" : "Sum" }]
           ]
         }
       }
