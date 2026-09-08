@@ -21,8 +21,15 @@ COPY src/features/ src/features/
 # `ModuleNotFoundError: No module named 'src.data_gen'`.
 COPY src/data_gen/ src/data_gen/
 COPY src/__init__.py src/__init__.py
+# scripts/ is needed for training_dag, which reuses this image
+# (KubernetesPodOperator, cmds=["python", "-m", "scripts.run_training_pipeline"])
+# — real bug found by actually triggering that DAG for the first time
+# ever (it had sat paused since this repo's early history): scripts/
+# had never been copied in at all, so the module genuinely didn't exist
+# in this image: `ModuleNotFoundError: No module named 'scripts'`.
+COPY scripts/ scripts/
 
-RUN mkdir -p /app/models /app/data/local_bronze && chown -R appuser:appuser /app
+RUN mkdir -p /app/models /app/data/local_bronze /app/data/synthetic /app/reports && chown -R appuser:appuser /app
 USER appuser
 
 EXPOSE 8000

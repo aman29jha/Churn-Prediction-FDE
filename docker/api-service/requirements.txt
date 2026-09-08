@@ -6,6 +6,14 @@ shap
 pandas
 numpy
 boto3
+# scikit-learn + matplotlib: needed by scripts/run_training_pipeline.py,
+# which reuses this image for training_dag (KubernetesPodOperator) —
+# sklearn for train_test_split/PR-AUC/Brier score, matplotlib for the
+# global SHAP importance plot. Real bug found live-triggering that DAG
+# for the first time ever: neither was installed, and scripts/ itself
+# had never been copied into the image at all (see COPY below).
+scikit-learn
+matplotlib
 # requests + s3fs: needed by src/data_gen/live_simulator.py, which reuses
 # this image for live_simulator_dag (KubernetesPodOperator) — requests to
 # POST to /events/ingest, s3fs because pandas delegates s3:// reads to it
