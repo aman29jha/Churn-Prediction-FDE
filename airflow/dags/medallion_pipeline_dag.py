@@ -9,6 +9,17 @@ replaced.
 Live-demo safety net: this DAG can also be triggered manually from the
 Airflow UI's native "Trigger DAG" button if the automated chain hiccups
 during a reviewer call — no extra code needed for that fallback.
+
+max_active_runs=1: real bug found live-testing the fixed event trigger
+chain — two ingest batches landing close together produced two
+near-simultaneous Lambda invocations, both triggering this DAG, and the
+two silver_transform tasks' concurrent SparkApplication submissions
+raced on a driver configmap ("configmap ... not found", driver failed).
+Beyond that specific k8s race, running two Silver->Gold passes
+concurrently against the same Iceberg tables is a correctness risk on
+its own (overlapping MERGE INTOs) — serializing runs is the right fix
+either way, matching the pattern already used in live_simulator_dag and
+training_dag.
 """
 from datetime import datetime
 
@@ -21,6 +32,7 @@ with DAG(
     schedule=None,
     start_date=datetime(2024, 1, 1),
     catchup=False,
+    max_active_runs=1,
     tags=["medallion", "spark"],
 ) as dag:
     silver = SparkKubernetesOperator(
