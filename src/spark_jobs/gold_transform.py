@@ -38,11 +38,22 @@ def run_gold_transform(
     model_path: Path,
     baseline: RFMQuintileBaseline,
     feature_window_days: int = 60,
+    live_scoring: bool = False,
 ) -> dict[str, DataFrame]:
+    """live_scoring=True (gold_transform's real, scheduled production
+    path — see scripts/spark_job_entrypoint.py's --live-scoring flag)
+    computes features from every event known up to `as_of` (normally
+    "now"), not the offline train/eval path's held-out 60-day gap — see
+    compute_rfm_features's exclude_recent_days docstring. False (the
+    default, used for reproducible backtests) preserves the original
+    leakage-safe windowing."""
     events_pd = silver_df.toPandas()
     events_pd["timestamp"] = pd.to_datetime(events_pd["timestamp"], utc=True)
 
-    features = compute_rfm_features(events_pd, as_of=as_of, feature_window_days=feature_window_days)
+    exclude_recent_days = 0 if live_scoring else None
+    features = compute_rfm_features(
+        events_pd, as_of=as_of, feature_window_days=feature_window_days, exclude_recent_days=exclude_recent_days
+    )
     labels = compute_label(events_pd, as_of=as_of, feature_window_days=feature_window_days)
     features_labeled = features.merge(labels, on="customer_id", how="left")
 

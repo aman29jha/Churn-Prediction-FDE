@@ -54,9 +54,20 @@ def compute_rfm_features(
     events: pd.DataFrame,
     as_of: pd.Timestamp,
     feature_window_days: int = FEATURE_WINDOW_DAYS_DEFAULT,
+    exclude_recent_days: int | None = None,
 ) -> pd.DataFrame:
+    """exclude_recent_days: how many days immediately before `as_of` to
+    hold out of feature computation. Defaults to `feature_window_days`,
+    reserving a gap exactly as wide as compute_label's label window so
+    training/eval features never overlap the label period they're
+    predicting (offline use — see docs/modeling.md). Live scoring
+    (gold_transform's --live-scoring path) passes 0: there's no label to
+    protect against leakage from at serving time, so features should use
+    every event known up to `as_of` itself, not stop 60 days short of it.
+    """
     events = _ensure_flat(events)
-    T = _cutoff(as_of, feature_window_days)
+    gap_days = feature_window_days if exclude_recent_days is None else exclude_recent_days
+    T = _cutoff(as_of, gap_days)
     T30 = T - pd.Timedelta(days=SHORT_LOOKBACK_DAYS)
     T90 = T - pd.Timedelta(days=LONG_LOOKBACK_DAYS)
 

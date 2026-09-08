@@ -8,6 +8,7 @@ Produces reports/metrics.json, reports/fairness.json, reports/global_shap_import
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 
 import matplotlib
@@ -27,6 +28,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 DATA_DIR = REPO_ROOT / "data" / "synthetic"
 REPORTS_DIR = REPO_ROOT / "reports"
 MODELS_DIR = REPO_ROOT / "models"
+MODEL_REGISTRY_BUCKET = os.environ.get("MODEL_REGISTRY_BUCKET")
 
 
 def main():
@@ -134,6 +136,21 @@ def main():
     score_table["rfm_segment"] = all_baseline["segment"].values
     score_table.to_json(MODELS_DIR / "customer_scores.json", orient="records", indent=2)
     print(f"\nPersisted model + baseline + {len(score_table)}-row score cache to {MODELS_DIR}")
+
+    # Real production retraining loop, not a local-only artifact: push to
+    # the S3 model registry so the NEXT gold_transform run (its
+    # sync-model-artifacts initContainer does `aws s3 sync
+    # s3://<registry>/ /models/` — see airflow/dags/specs/gold_spark_application.yaml)
+    # actually picks up what this run just trained. Without
+    # MODEL_REGISTRY_BUCKET set (local dev), this is a no-op — artifacts
+    # stay local-only, same as before.
+    if MODEL_REGISTRY_BUCKET:
+        import boto3
+
+        s3 = boto3.client("s3")
+        for filename in ["xgboost_model.json", "feature_columns.json", "baseline.pkl", "customer_scores.json"]:
+            s3.upload_file(str(MODELS_DIR / filename), MODEL_REGISTRY_BUCKET, filename)
+        print(f"Pushed {4} model registry artifacts to s3://{MODEL_REGISTRY_BUCKET}/")
 
     return comparison, importance, fairness_report, findings
 

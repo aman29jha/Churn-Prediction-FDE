@@ -2,16 +2,22 @@
 FastAPI scoring + ingest service. See docs/architecture/04-serving.md and
 docs/architecture/02-simulator.md.
 
-Stand-ins still in place in the DEPLOYED service, not just locally — see
-SUBMISSION.md and docs/architecture/04-serving.md's "Current implementation
-status" for the honest gap this leaves (no live DynamoDB read, no
-cold-start fallback for a customer_id outside the snapshot):
-- `models/customer_scores.json` stands in for a live DynamoDB fast-lookup
-  read — it's a snapshot synced from the S3 model registry at pod startup
-  (refreshed from the real Gold Spark job's output), not a per-request read.
-- `data/local_bronze/events.jsonl` stands in for the Bronze Iceberg table
-  (real ingest in production appends directly to Bronze via a lightweight
-  Iceberg writer, not a local file).
+Both the scoring read path and the ingest write path are the real,
+deployed production paths, not stand-ins:
+- `/score/{customer_id}` reads live from the `customer_scores` DynamoDB
+  table first (src/service/dynamodb_client.py) — every gold_transform run
+  writes each customer's current feature vector + churn_probability there,
+  so a score reflects the latest Gold run with no pod restart needed.
+  `models/customer_scores.json` (synced from S3 at pod startup) is kept
+  only as a cold-start fallback for a customer_id DynamoDB doesn't have yet
+  (e.g. a brand-new deployment before Gold has ever run).
+- `/events/ingest` writes each batch as a real object under
+  `s3://<data-lake-bucket>/bronze/live/...`, which is what the deployed
+  S3 -> SNS -> SQS -> Lambda chain (infra/terraform/modules/messaging)
+  watches to auto-trigger medallion_pipeline_dag — see
+  docs/architecture/03-orchestration.md. Only falls back to the local
+  `data/local_bronze/events.jsonl` file when DATA_LAKE_BUCKET isn't set
+  (local dev / tests, no AWS calls made).
 - A single shared-secret bearer token stands in for the real service-to-
   service auth — this one genuinely is what's deployed (a K8s Secret
   injecting the same token), not a stand-in.
@@ -21,10 +27,13 @@ from __future__ import annotations
 import json
 import os
 import time
+import uuid
 from collections import defaultdict, deque
 from contextlib import asynccontextmanager
+from datetime import datetime, timezone
 from pathlib import Path
 
+import boto3
 import numpy as np
 import pandas as pd
 import xgboost as xgb
@@ -34,6 +43,7 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from src.modeling.explain import build_explainer, explain_customer
 from src.modeling.train import FEATURE_COLUMNS
 from src.service.athena_client import run_athena_query
+from src.service.dynamodb_client import get_customer_score
 from src.service.metrics import put_metric
 from src.service.schemas import ExplanationItem, IngestBatch, IngestResponse, ScoreResponse
 
@@ -41,6 +51,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 MODELS_DIR = REPO_ROOT / "models"
 BRONZE_DIR = REPO_ROOT / "data" / "local_bronze"
 INGEST_TOKEN = os.environ.get("INGEST_TOKEN", "local-dev-token")
+DATA_LAKE_BUCKET = os.environ.get("DATA_LAKE_BUCKET")
 
 RATE_LIMIT_MAX_REQUESTS = 60
 RATE_LIMIT_WINDOW_SECONDS = 60
@@ -119,11 +130,15 @@ def health():
 def score_customer(customer_id: str, request: Request, explain: bool = True):
     _check_rate_limit(request.client.host if request.client else "unknown")
 
-    cache = _state["score_cache"]
-    if customer_id not in cache:
-        raise HTTPException(status_code=404, detail=f"customer_id '{customer_id}' not found in score cache")
+    live_entry = get_customer_score(customer_id)
+    if live_entry is not None:
+        entry, source = live_entry, "dynamodb"
+    else:
+        cache = _state["score_cache"]
+        if customer_id not in cache:
+            raise HTTPException(status_code=404, detail=f"customer_id '{customer_id}' not found")
+        entry, source = cache[customer_id], "cache"
 
-    entry = cache[customer_id]
     explanation, plain_language = None, None
     if explain:
         # SHAP is computed on-demand per docs/explainability.md, not
@@ -141,7 +156,7 @@ def score_customer(customer_id: str, request: Request, explain: bool = True):
         customer_id=customer_id,
         churn_probability=entry["churn_probability"],
         rfm_segment=entry["rfm_segment"],
-        source="cache",
+        source=source,
         explanation=explanation,
         plain_language=plain_language,
     )
@@ -183,8 +198,22 @@ def analytics_segments(request: Request):
 def ingest_events(batch: IngestBatch, request: Request, _auth: str = Depends(require_auth)):
     _check_rate_limit(request.client.host if request.client else "unknown")
 
-    with open(BRONZE_DIR / "events.jsonl", "a") as f:
-        for event in batch.events:
-            f.write(event.model_dump_json() + "\n")
+    if DATA_LAKE_BUCKET:
+        # Real Bronze write: one object per batch, under the exact
+        # "bronze/" prefix the S3 -> SNS -> SQS -> Lambda chain watches
+        # (infra/terraform/modules/messaging) to auto-trigger
+        # medallion_pipeline_dag. A JSON array (not NDJSON) since
+        # silver_transform's Spark reader uses multiLine=true.
+        now = datetime.now(timezone.utc)
+        key = (
+            f"bronze/live/date={now:%Y-%m-%d}/hour={now:%H}/"
+            f"batch-{now.strftime('%Y%m%dT%H%M%S')}-{uuid.uuid4().hex[:8]}.json"
+        )
+        body = "[" + ",".join(event.model_dump_json() for event in batch.events) + "]"
+        boto3.client("s3").put_object(Bucket=DATA_LAKE_BUCKET, Key=key, Body=body.encode())
+    else:
+        with open(BRONZE_DIR / "events.jsonl", "a") as f:
+            for event in batch.events:
+                f.write(event.model_dump_json() + "\n")
 
     return IngestResponse(accepted=len(batch.events))

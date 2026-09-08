@@ -21,8 +21,13 @@ spec:
     - "/models/xgboost_model.json"
     - "--baseline"
     - "/models/baseline.pkl"
-    - "--as-of"
-    - "2024-06-01T12:00:00Z"
+    # No --as-of: real production scoring, defaults to now() every run —
+    # see scripts/spark_job_entrypoint.py's docstring. --live-scoring means
+    # features use every event known right now, not the offline
+    # train/eval path's held-out 60-day gap.
+    - "--live-scoring"
+    - "--dynamodb-table"
+    - "churn-fde-sandbox-customer-scores"
     - "--iceberg-catalog-db"
     - "glue_catalog.churn_fde_sandbox"
   sparkVersion: "3.4.0"

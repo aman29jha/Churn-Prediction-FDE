@@ -142,6 +142,41 @@ def test_no_leakage_features_never_see_events_after_cutoff(events):
     pd.testing.assert_frame_equal(full.loc[common].sort_index(), truncated.loc[common].sort_index())
 
 
+def test_exclude_recent_days_zero_uses_events_right_up_to_as_of(events):
+    """Live scoring (gold_transform's --live-scoring) passes
+    exclude_recent_days=0 so features reflect everything known right now,
+    not the offline path's held-out 60-day gap. A synthetic session
+    landing inside that gap (after T, at or before as_of) must change
+    recency_days when exclude_recent_days=0, and must NOT when it's the
+    default (the leakage guard from the test above)."""
+    T = AS_OF - pd.Timedelta(days=60)
+    fresh_session_time = T + pd.Timedelta(days=1)
+    # events (the fixture) is already flattened (load_events calls
+    # _ensure_flat) — the new row must match that shape (a flat
+    # duration_sec column, no nested properties dict) or concatenating
+    # produces both a "properties" and a "duration_sec" column at once.
+    synthetic = pd.concat([
+        events,
+        pd.DataFrame([{
+            "event_id": "e_fresh", "customer_id": "synthetic_fresh", "event_type": "session",
+            "timestamp": fresh_session_time, "duration_sec": 100,
+        }]),
+    ], ignore_index=True)
+    synthetic["timestamp"] = pd.to_datetime(synthetic["timestamp"], utc=True)
+
+    default_gap = compute_rfm_features(synthetic, as_of=AS_OF, feature_window_days=60).set_index("customer_id")
+    no_gap = compute_rfm_features(
+        synthetic, as_of=AS_OF, feature_window_days=60, exclude_recent_days=0
+    ).set_index("customer_id")
+
+    # Default behavior: the fresh session is inside the excluded window,
+    # so this customer has no pre-T session at all -> recency_days is NaN.
+    assert math.isnan(default_gap.loc["synthetic_fresh", "recency_days"])
+    # exclude_recent_days=0: the same session is now visible, giving a
+    # real, finite recency measured from as_of (T + 1 day -> 59 days out).
+    assert no_gap.loc["synthetic_fresh", "recency_days"] == pytest.approx(59.0)
+
+
 def test_label_window_never_looks_before_cutoff(events):
     """The label must only reflect activity strictly after T — a customer whose
     only session is exactly at T should count as churned (window is (T, as_of])."""

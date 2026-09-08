@@ -16,6 +16,8 @@ Running the Silver/Gold pipeline on a blind fixed interval means either wasting 
 
 This gives us: prompt processing when there's a real burst of activity, no wasted runs during quiet periods, and a guaranteed maximum staleness (5 minutes) even during a slow trickle.
 
+This full chain is genuinely deployed (`infra/terraform/modules/messaging`) and, as of `src/service/app.py` actually writing real Bronze objects (previously a local-file stand-in — see `SUBMISSION.md`), verified firing end-to-end from a live `/events/ingest` call through to a `medallion_pipeline_dag` run triggered with zero manual intervention.
+
 ## Spark Operator CRDs
 
 We installed the **Spark Operator** (a separate controller + CRDs + admission webhook) rather than using plain `spark-submit`, for declarative job specs and built-in status/retry/history:
@@ -32,7 +34,7 @@ We installed the **Spark Operator** (a separate controller + CRDs + admission we
 **Live-demo safety net**: Airflow's UI has a native **"Trigger DAG"** button — if the automated event-driven chain (S3 -> SNS -> SQS -> Lambda) has any hiccup during a live reviewer call, triggering `medallion_pipeline_dag` manually from the UI guarantees the pipeline still runs, with zero extra code needed to build that fallback.
 
 - **`medallion_pipeline_dag`**: `Silver task -> Gold task`, real dependency chaining (Gold only runs if Silver succeeded) and automatic retries — not a timer-based guess at sequencing.
-- **`training_dag`**: manual trigger or infrequent (e.g. weekly) schedule, `KubernetesPodOperator` running plain Python/XGBoost (not Spark — see [../modeling.md](../modeling.md) for why). Deliberately decoupled from the main pipeline's cadence: **train rarely, score often** is itself a production-readiness talking point.
+- **`training_dag`**: real `@daily` schedule (also manually triggerable), `KubernetesPodOperator` running plain Python/XGBoost (not Spark — see [../modeling.md](../modeling.md) for why). Deliberately decoupled from the main pipeline's cadence: **train on a schedule, score continuously** is itself a production-readiness talking point. Each run pushes its trained artifacts to the S3 model registry (`scripts/run_training_pipeline.py`, `MODEL_REGISTRY_BUCKET`), which is exactly what `gold_transform`'s `sync-model-artifacts` initContainer reads before every scoring run — so a retrain genuinely changes what the next Gold run scores customers with, not just a local artifact nobody reads.
 - **`analytics_dag`**: daily, time-based schedule (not event-triggered like `medallion_pipeline_dag`) — KPI trends and cohort retention don't need low-latency refresh, and shouldn't couple to or slow down the churn-scoring critical path. See [07-analytics.md](07-analytics.md).
 - **`live_simulator_dag`**: the live trickle generator (see [02-simulator.md](02-simulator.md)), running as an Airflow DAG rather than a raw Kubernetes CronJob specifically so it shares the same start/pause control plane as everything else — Airflow's native per-DAG pause/unpause toggle, flippable live during a reviewer demo with no `kubectl` needed.
 - **Airflow UI**: DAG run history, retries, logs — linked from the reviewer console.

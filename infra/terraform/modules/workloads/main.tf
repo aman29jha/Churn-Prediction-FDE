@@ -115,6 +115,20 @@ resource "kubernetes_deployment_v1" "api_service" {
             name  = "ATHENA_OUTPUT_LOCATION"
             value = "s3://${var.data_lake_bucket}/athena-results/"
           }
+          env {
+            # Real Bronze write for /events/ingest (src/service/app.py) —
+            # what the S3 -> SNS -> SQS -> Lambda chain
+            # (modules/messaging) watches to auto-trigger
+            # medallion_pipeline_dag.
+            name  = "DATA_LAKE_BUCKET"
+            value = var.data_lake_bucket
+          }
+          env {
+            # Real per-request read for /score (src/service/dynamodb_client.py) —
+            # gold_transform writes here every run.
+            name  = "CUSTOMER_SCORES_TABLE"
+            value = var.customer_scores_table_name
+          }
 
           volume_mount {
             name       = "models"

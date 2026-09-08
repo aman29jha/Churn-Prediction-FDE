@@ -4,20 +4,22 @@
 
 ## Current implementation status (read this before the design below)
 
-The design below (DynamoDB fast path + on-the-fly cold-start compute) is the
-**target**, and the DynamoDB table + IRSA grants for it are genuinely
-provisioned (`infra/terraform/modules/storage/main.tf`,
-`modules/irsa/main.tf`). The **deployed** `src/service/app.py` does not read
-from DynamoDB yet — it serves `/score/{customer_id}` from a static JSON
-snapshot (`models/customer_scores.json`) synced from the S3 model registry
-at pod startup. That snapshot is refreshed from the real Gold Spark job's
-output (all customers scored in the last Gold run, not just the training-time
-sample), but it is a point-in-time file, not a live per-request DynamoDB
-lookup — and there is no cold-start fallback in the request path: a
-`customer_id` with no row in that snapshot returns a plain `404`, not an
-on-the-fly computed score. See `SUBMISSION.md` at the repo root for why, and
-for what wiring this up for real would take. Sections below describe the
-target design as originally specified.
+The DynamoDB fast path described below is now real: `src/service/app.py`'s
+`/score/{customer_id}` reads live, per-request, from the `customer_scores`
+DynamoDB table (`src/service/dynamodb_client.py`). Every `gold_transform`
+run writes each customer's current feature vector + `churn_probability` +
+segment there (`scripts/spark_job_entrypoint.py --dynamodb-table`), so a
+score reflects the latest Gold run immediately — no pod restart needed,
+closing the gap this section used to describe.
+
+One piece of the original target design is still not built: true
+on-the-fly cold-start compute (deriving RFM features from raw Silver
+events for a customer with no Gold row at all, e.g. one added between Gold
+runs). What exists instead is a two-tier lookup — DynamoDB first, falling
+back to the static JSON snapshot (`models/customer_scores.json`, synced
+from S3 at pod startup) only if DynamoDB has no row either. A `customer_id`
+missing from *both* still returns a `404`, not a computed score. Stated
+honestly as the one remaining gap, not glossed over.
 
 ## Two stores, two purposes
 
@@ -29,8 +31,8 @@ A standard, deliberate pattern rather than one store trying to do both jobs:
 ## `/score/{customer_id}`
 
 1. Request hits the ingress (TLS termination) -> auth middleware -> rate limiter -> FastAPI.
-2. **Fast path**: look up the latest precomputed score in DynamoDB (written by the last Gold job run).
-3. **Cold path** (customer not yet in DynamoDB — e.g. brand new): compute on-the-fly from the latest available Silver data + the model artifact loaded from the S3 model registry.
+2. **Fast path** (real, deployed): look up the latest precomputed score in DynamoDB — written by the last `gold_transform` run, which now scores customers using a rolling `as_of=now()` (`--live-scoring`, see [01-data-platform.md](01-data-platform.md)) rather than a fixed historical cutoff, so this genuinely reflects current data.
+3. **Cold-start fallback** (DynamoDB has no row — e.g. before Gold has ever run): the static JSON snapshot synced from S3 at pod startup. Still a gap: true on-the-fly compute from raw Silver events for a customer in neither store isn't built — see "Current implementation status" above.
 4. Response includes the probability, the RFM segment, and (for the console) a SHAP-based explanation — see [../modeling.md](../modeling.md).
 
 ## `/events/ingest`

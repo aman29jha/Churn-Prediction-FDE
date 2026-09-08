@@ -7,6 +7,13 @@ themselves take/return DataFrames and are unit-tested directly
 
 Usage:
   spark-submit scripts/spark_job_entrypoint.py silver --input /data/bronze --output /data/silver
+  # Real production scoring (medallion_pipeline_dag's actual deployed spec): no
+  # --as-of, so it defaults to now() — --live-scoring so features use every
+  # event known right now, not the offline train/eval path's held-out gap.
+  spark-submit scripts/spark_job_entrypoint.py gold --input /data/silver --output /data/gold \
+      --model /models/xgboost_model.json --baseline /models/baseline.pkl \
+      --live-scoring --dynamodb-table churn-fde-sandbox-customer-scores
+  # Reproducible backtest/eval (fixed historical cutoff, matches training's own as-of):
   spark-submit scripts/spark_job_entrypoint.py gold --input /data/silver --output /data/gold \
       --model /models/xgboost_model.json --baseline /models/baseline.pkl --as-of 2024-06-01T12:00:00Z
   spark-submit scripts/spark_job_entrypoint.py compaction --input /data/bronze --output /data/bronze_compacted
@@ -35,12 +42,15 @@ from __future__ import annotations
 import argparse
 import pickle
 import sys
+from datetime import datetime, timezone
+from decimal import Decimal
 from pathlib import Path
 
 # spark-submit runs this file directly (not via `python -m`), so the repo
 # root needs to be on sys.path explicitly for `from src....` imports to work.
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+import numpy as np
 import pandas as pd
 from pyspark.sql import DataFrame, SparkSession
 
@@ -105,6 +115,36 @@ def _write_iceberg(spark: SparkSession, df: DataFrame, iceberg_table: str, merge
     print(f"[{row_label}] merged {df.count()} rows into Iceberg table {iceberg_table} (keys: {merge_keys})")
 
 
+def _dynamodb_value(v):
+    """boto3's DynamoDB serializer rejects raw Python float and doesn't
+    recognize numpy scalar types at all — convert to what it accepts."""
+    if isinstance(v, (bool, np.bool_)):
+        return bool(v)
+    if isinstance(v, np.integer):
+        return int(v)
+    if isinstance(v, (float, np.floating)):
+        return Decimal(str(v))
+    return v
+
+
+def _write_dynamodb(rows_pd: pd.DataFrame, table_name: str) -> None:
+    """Real per-customer fast-lookup write, feeding /score's live
+    DynamoDB read (src/service/dynamodb_client.py) — see
+    docs/architecture/04-serving.md. ~1,280 rows even at this dataset's
+    full scale, so a plain boto3 batch_writer from the driver (no Spark
+    connector) is the right-sized tool, same reasoning as gold_transform's
+    own toPandas() docstring.
+    """
+    import boto3
+
+    table = boto3.resource("dynamodb").Table(table_name)
+    with table.batch_writer(overwrite_by_pkeys=["customer_id"]) as batch:
+        for row in rows_pd.to_dict(orient="records"):
+            item = {k: _dynamodb_value(v) for k, v in row.items() if pd.notna(v)}
+            batch.put_item(Item=item)
+    print(f"[gold] wrote {len(rows_pd)} rows to DynamoDB table {table_name}")
+
+
 def _write(spark: SparkSession, df: DataFrame, plain_path: str, iceberg_table: str | None, merge_keys: list[str], row_label: str) -> None:
     # Plain-Parquet write stays a full overwrite deliberately: it's the
     # "latest snapshot only" path the model-registry customer_scores.json
@@ -124,7 +164,21 @@ def main():
     parser.add_argument("--output", required=True)
     parser.add_argument("--model", default=None)
     parser.add_argument("--baseline", default=None)
-    parser.add_argument("--as-of", default="2024-06-01T12:00:00Z")
+    parser.add_argument(
+        "--as-of", default=None,
+        help="Fixed cutoff for reproducible backtests/training. Omit for the real production gold run — "
+             "defaults to the current time, i.e. score customers using everything known right now.",
+    )
+    parser.add_argument(
+        "--live-scoring", action="store_true",
+        help="Real scoring semantics: features use every event up to --as-of (normally 'now'), not the "
+             "offline train/eval path's held-out 60-day gap — see compute_rfm_features's docstring.",
+    )
+    parser.add_argument(
+        "--dynamodb-table", default=None,
+        help="e.g. churn-fde-sandbox-customer-scores — when set, also writes each customer's current "
+             "feature vector + churn_probability + segment there for /score's live per-request read.",
+    )
     parser.add_argument(
         "--iceberg-catalog-db", default=None,
         help="e.g. glue_catalog.churn_fde_sandbox — when set, also writes each output as a real Iceberg table there.",
@@ -156,9 +210,11 @@ def main():
         silver = spark.read.parquet(args.input)
         with open(args.baseline, "rb") as f:
             baseline = pickle.load(f)
+        as_of = pd.Timestamp(args.as_of) if args.as_of else pd.Timestamp(datetime.now(timezone.utc))
         result = run_gold_transform(
-            spark, silver, as_of=pd.Timestamp(args.as_of),
+            spark, silver, as_of=as_of,
             model_path=Path(args.model), baseline=baseline,
+            live_scoring=args.live_scoring,
         )
         # (customer_id, run_date): a same-day re-run updates each
         # customer's row in place (idempotent); a new day's run appends a
@@ -169,6 +225,25 @@ def main():
                 f"{catalog_db}.{name}" if catalog_db else None,
                 ["customer_id", "run_date"], "gold",
             )
+
+        if args.dynamodb_table:
+            # Join the three Gold outputs back into one per-customer row
+            # (feature vector + churn_probability + segment) — exactly
+            # what /score needs for a live lookup + SHAP explanation.
+            combined = (
+                result["rfm_features"]
+                .join(
+                    result["churn_scores"].select("customer_id", "run_date", "churn_probability"),
+                    ["customer_id", "run_date"],
+                )
+                .join(
+                    result["rfm_segments"].select("customer_id", "run_date", "segment"),
+                    ["customer_id", "run_date"],
+                )
+                .withColumnRenamed("segment", "rfm_segment")
+                .drop("run_date")
+            )
+            _write_dynamodb(combined.toPandas(), args.dynamodb_table)
 
     elif args.job == "compaction":
         df = spark.read.parquet(args.input)

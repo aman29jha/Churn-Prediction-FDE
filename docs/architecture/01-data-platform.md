@@ -8,10 +8,10 @@ Raw events arrive continuously (bootstrap history + live trickle) and need progr
 
 ## Layers
 
-### Bronze — `bronze.events`
-Raw landed events, append-only, one row per event exactly as received (event_id, customer_id, event_type, timestamp, properties as a struct/JSON string). Written directly by:
-- The bootstrap generator (one-time historical load, via `aws s3 cp` / a direct Iceberg append from a local script)
-- The `/events/ingest` API endpoint (live trickle), via a lightweight Python Iceberg writer — no Spark needed for a simple append, keeps ingest latency low.
+### Bronze — `s3://<data-lake-bucket>/bronze/`
+Raw landed events, append-only, one row per event exactly as received. **Not an Iceberg table** — deliberately plain, partitioned JSON files (`bronze/live/date=.../hour=.../batch-*.json`), since Bronze here is a write-once, read-once raw landing zone with a single consumer (Silver); Iceberg's ACID-merge/schema-evolution value only starts paying for itself from Silver onward, where multiple runs genuinely need to update the same rows in place. Written directly by:
+- The bootstrap generator (one-time historical load, `aws s3 cp` of the full synthetic dataset)
+- The `/events/ingest` API endpoint (live trickle, `src/service/app.py`) — one real S3 object per batch, no Spark needed for a simple append, keeps ingest latency low. This is exactly what the S3 -> SNS -> SQS -> Lambda chain below watches (`filter_prefix = "bronze/"`) to auto-trigger `medallion_pipeline_dag`.
 
 No transformation happens here beyond schema enforcement — Bronze is a faithful copy of what arrived.
 
@@ -25,7 +25,11 @@ Cleaned, deduplicated, validated, schema-conformed:
 ### Gold — `rfm_features`, `churn_scores`, `rfm_segments` (Spark job)
 Business-level, customer-grained tables:
 
-**`gold.rfm_features`** — one row per customer per scoring run, computed only from Silver events with `timestamp <= T` (T = as_of − 60 days, our leakage-safe feature cutoff):
+**Two distinct modes, one function** (`compute_rfm_features`, `src/features/rfm.py`):
+- **Offline train/eval** (the default): features use Silver events with `timestamp <= T`, where `T = as_of − 60 days` — the leakage-safe cutoff below, reserving the following 60 days as the label window so features and label never overlap. This is what `scripts/run_training_pipeline.py` uses.
+- **Live scoring** (`medallion_pipeline_dag`'s real, deployed `gold_transform` — `--live-scoring`, `--as-of` omitted so it defaults to `now()`): `T = as_of` itself — every event known right now, no reserved gap. There's no label to protect against leakage from at serving time, so holding back the most recent 60 days would just mean scoring on stale data, defeating the point of a live pipeline.
+
+**`gold.rfm_features`** — one row per customer per scoring run, computed only from Silver events with `timestamp <= T`:
 
 | Feature | Definition |
 |---|---|

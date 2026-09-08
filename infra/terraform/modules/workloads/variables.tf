@@ -10,6 +10,7 @@ variable "image_tag" {
 variable "ecr_repository_urls" { type = map(string) }
 variable "model_registry_bucket" { type = string }
 variable "data_lake_bucket" { type = string }
+variable "customer_scores_table_name" { type = string }
 variable "glue_database_name" { type = string }
 variable "dashboard_name" { type = string }
 variable "api_service_role_arn" { type = string }

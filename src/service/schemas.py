@@ -37,6 +37,6 @@ class ScoreResponse(BaseModel):
     customer_id: str
     churn_probability: float
     rfm_segment: str
-    source: Literal["cache", "computed_on_demand"]
+    source: Literal["dynamodb", "cache", "computed_on_demand"]
     explanation: list[ExplanationItem] | None = None
     plain_language: str | None = None
