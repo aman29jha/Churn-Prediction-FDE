@@ -69,7 +69,7 @@ variable "dags_git_repo" {
 }
 
 variable "image_tag" {
-  description = "Git-SHA-based tag for the 3 Docker images already pushed to ECR (see docs/architecture/08-infrastructure.md). Suffixed -amd64: the first push (sha-83887be) was built natively on Apple Silicon (arm64) and crashed on Fargate's amd64 nodes with 'exec format error' — rebuilt with `docker buildx build --platform linux/amd64`. Bumped to sha-9dcfe67-amd64: fixed a real Silver failure — Hive-partition-style Bronze keys (date=/hour=) conflicted with the bootstrap load's flat sibling files, breaking Spark's partition inference; ingest now writes flat filenames. spark-jobs/console content unchanged, rebuilt/retagged only to keep all 3 images on one shared per-commit tag."
+  description = "Git-SHA-based tag for the 3 Docker images already pushed to ECR (see docs/architecture/08-infrastructure.md). Suffixed -amd64: the first push (sha-83887be) was built natively on Apple Silicon (arm64) and crashed on Fargate's amd64 nodes with 'exec format error' — rebuilt with `docker buildx build --platform linux/amd64`. Bumped to sha-00f923f-amd64: fixed training_dag (api-service image never had scripts/ or scikit-learn/matplotlib; the DAG itself was still paused from earlier in this repo's history), and moved Silver/Gold retries to the Airflow task level instead of the Spark Operator's in-place restart (a known Operator timing race was causing spurious 'failed' DAG runs in Airflow's history even when the underlying job later succeeded)."
   type        = string
-  default     = "sha-9dcfe67-amd64"
+  default     = "sha-00f923f-amd64"
 }
