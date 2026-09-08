@@ -215,17 +215,25 @@ def ingest_events(batch: IngestBatch, request: Request, _auth: str = Depends(req
         # medallion_pipeline_dag. A JSON array (not NDJSON) since
         # silver_transform's Spark reader uses multiLine=true.
         #
-        # Deliberately flat filenames, no date=/hour= partition-style
-        # subdirectories: real failure hit live-testing this exact path —
-        # Spark's partition inference chokes when a prefix mixes Hive-style
-        # partitioned subdirectories with plain sibling files (the
-        # bootstrap load's bronze/synthetic_events.json,
-        # bronze/raw_sample_events.json), raising "AssertionError:
-        # Conflicting directory structures detected" on read. silver_transform
-        # reads the whole bronze/ prefix flatly every run anyway, so
-        # partition directories bought nothing here regardless.
+        # Deliberately flat, directly under bronze/ — no subdirectory at
+        # all, not even a non-partitioned one. Two real failures found
+        # live-testing this exact path, in sequence:
+        # 1. date=/hour= partition-style subdirectories broke Spark's
+        #    partition inference when mixed with the bootstrap load's flat
+        #    sibling files ("AssertionError: Conflicting directory
+        #    structures detected"). Fixed by using flat filenames.
+        # 2. That fix still put files one level down, in a bronze/live/
+        #    subdirectory — and Spark's directory reader does NOT descend
+        #    into subdirectories by default (no recursiveFileLookup, and
+        #    "live" isn't Hive-partition-style so it doesn't trigger
+        #    partition discovery either). silver_transform kept "succeeding"
+        #    on every run while silently never seeing a single live event —
+        #    confirmed live: silver_events' newest timestamp was stuck at
+        #    2024-06-01 hours after this was supposedly fixed. Real files
+        #    directly under bronze/ (like the bootstrap ones) are the only
+        #    ones a plain spark.read.json(".../bronze/") ever finds.
         now = datetime.now(timezone.utc)
-        key = f"bronze/live/batch-{now.strftime('%Y%m%dT%H%M%S')}-{uuid.uuid4().hex[:8]}.json"
+        key = f"bronze/live-{now.strftime('%Y%m%dT%H%M%S')}-{uuid.uuid4().hex[:8]}.json"
         body = "[" + ",".join(event.model_dump_json() for event in batch.events) + "]"
         boto3.client("s3").put_object(Bucket=DATA_LAKE_BUCKET, Key=key, Body=body.encode())
     else:
