@@ -12,7 +12,7 @@ digraph Simulator {
 
   REG [label="S3: sim-state/customer_registry.json\ncustomer_id, archetype, last_state", shape=cylinder, fillcolor="#fdebd0"];
   SECRET [label="K8s Secret\ningest bearer token", shape=note, fillcolor="#fadbd8"];
-  RAW [label="Bronze Iceberg table\nbronze.events\n(direct append, lightweight writer)", shape=cylinder, fillcolor="#cd7f32", fontcolor="white"];
+  RAW [label="Bronze\ns3://.../bronze/live/...\n(plain JSON, NOT Iceberg,\none real object per batch)", shape=cylinder, fillcolor="#cd7f32", fontcolor="white"];
   CW [label="CloudWatch\nlogs + latency/error/throughput", fillcolor="#f5eef8"];
   FEAT [label="S3 Event -> SNS -> SQS -> Lambda\n-> triggers Airflow (event-driven,\nnot polled) — see 03-orchestration", fillcolor="#f5b7b1"];
 

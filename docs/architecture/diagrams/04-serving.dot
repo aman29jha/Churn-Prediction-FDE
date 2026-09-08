@@ -20,8 +20,8 @@ digraph Serving {
   XRAY [label="AWS X-Ray\n(per-hop trace)", fillcolor="#f5eef8"];
 
   CLIENT -> ING -> AUTH -> RATE -> API;
-  API -> DDB [label="fast path:\nlatest score lookup"];
-  API -> S3MODEL [label="cold path:\non-the-fly compute\nif not cached"];
+  API -> DDB [label="fast path (real):\nlive per-request lookup,\nwritten every gold_transform run"];
+  API -> S3MODEL [label="cold-start fallback:\nstatic snapshot synced\nat pod startup\n(not on-the-fly compute)", style=dashed];
   API -> XRAY [style=dotted];
   CLIENT -> ATHENA [label="bulk / dashboard\nqueries (bypass API)", style=dashed];
 }

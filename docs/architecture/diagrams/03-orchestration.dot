@@ -4,11 +4,11 @@ digraph Orchestration {
   node [fontname="Helvetica", fontsize=10, shape=box, style="rounded,filled", margin="0.2,0.12"];
   edge [fontname="Helvetica", fontsize=9, color="#555555"];
 
-  BRONZE [label="Bronze Iceberg\n(new data file written)", fillcolor="#cd7f32", fontcolor="white"];
+  BRONZE [label="Bronze\n(plain JSON object written\nby /events/ingest, not Iceberg)", fillcolor="#cd7f32", fontcolor="white"];
   S3EVT [label="S3 Event Notification\ns3:ObjectCreated:*", shape=note, fillcolor="#fdebd0"];
   SNS [label="SNS Topic\nbronze-data-arrived", fillcolor="#f5b7b1"];
   SQS [label="SQS Queue\nbronze-data-arrived-queue", fillcolor="#f5b7b1"];
-  LAMBDA [label="Lambda\nSQS event-source mapping:\nBatchSize=20 OR\nMaxBatchingWindow=300s\n(native AWS batching,\nwhichever fires first)", fillcolor="#a9dfbf"];
+  LAMBDA [label="Lambda\nSQS event-source mapping:\nBatchSize=20 OR\nMaxBatchingWindow=300s\n(native AWS batching,\nwhichever fires first)\nBasic auth (admin/admin);\nhttp.client, not urllib\n(urllib hit a real Lambda\nsandbox EBUSY bug)", fillcolor="#a9dfbf"];
 
   subgraph cluster_sparkop {
     label="Spark Operator (installed controller + CRDs + webhook)"; style="rounded"; color="#888888";
@@ -22,14 +22,14 @@ digraph Orchestration {
     API_TRIGGER [label="Airflow REST API\nPOST /dags/medallion_pipeline_dag/dagRuns", shape=component, fillcolor="#d5f5e3"];
 
     subgraph cluster_dag1 {
-      label="medallion_pipeline_dag\n(schedule_interval=None,\ntriggered, not cron-polled)"; style="rounded"; color="#aaaaaa";
+      label="medallion_pipeline_dag\n(schedule_interval=None,\ntriggered, not cron-polled;\nmax_active_runs=1)"; style="rounded"; color="#aaaaaa";
       SILVER_T [label="Silver task\nSparkKubernetesOperator\n(creates SparkApplication CR)", fillcolor="#bdc3c7"];
-      GOLD_T [label="Gold task\nSparkKubernetesOperator\n(creates SparkApplication CR)", fillcolor="#f1c40f"];
+      GOLD_T [label="Gold task\nSparkKubernetesOperator\n(creates SparkApplication CR)\n--live-scoring, --dynamodb-table", fillcolor="#f1c40f"];
       SILVER_T -> GOLD_T [label="real dependency,\nretries on failure"];
     }
 
     subgraph cluster_dag3 {
-      label="training_dag (manual trigger / infrequent)"; style="rounded"; color="#aaaaaa";
+      label="training_dag (@daily schedule)"; style="rounded"; color="#aaaaaa";
       TRAIN_T [label="Training task\n(KubernetesPodOperator,\nplain Python/XGBoost, no Spark)", fillcolor="#fdebd0"];
     }
 
@@ -43,6 +43,7 @@ digraph Orchestration {
 
   COMPACT_SA [label="Compaction ScheduledSparkApplication\n(no Airflow involved —\nSpark Operator's own cron)", fillcolor="#f8c471"];
   GOLD [label="Gold Iceberg", fillcolor="#f1c40f"];
+  S3MODEL [label="S3 Model Registry", shape=cylinder, fillcolor="#fdebd0"];
 
   BRONZE -> S3EVT -> SNS -> SQS -> LAMBDA -> API_TRIGGER;
   API_TRIGGER -> SILVER_T;
@@ -53,7 +54,8 @@ digraph Orchestration {
   COMPACT_SA -> GOLD [style=dashed];
 
   GOLD_T -> GOLD;
-  GOLD -> TRAIN_T [label="reads"];
+  TRAIN_T -> S3MODEL [label="pushes trained\nmodel each run"];
+  S3MODEL -> GOLD_T [label="sync-model-artifacts\ninitContainer reads\nbefore scoring"];
   SILVER_T -> UI [style=dotted];
   GOLD_T -> UI [style=dotted];
   TRAIN_T -> UI [style=dotted];

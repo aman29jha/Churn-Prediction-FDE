@@ -26,11 +26,12 @@ digraph DataPlatform {
 
   IMG [label="docker/spark-jobs image\n(PySpark + Iceberg jars)\n-> ECR", shape=cylinder, fillcolor="#e8daef"];
 
-  BRONZE [label="Bronze\nbronze.events\n(raw, append-only)", fillcolor="#cd7f32", fontcolor="white"];
+  BRONZE [label="Bronze\ns3://.../bronze/\n(plain JSON, append-only,\nNOT an Iceberg table)", fillcolor="#cd7f32", fontcolor="white"];
   SILVER [label="Silver\nsilver.events\n(deduped, validated,\ntyped)", fillcolor="#bdc3c7"];
   GOLD_F [label="Gold: rfm_features", fillcolor="#f1c40f"];
   GOLD_S [label="Gold: rfm_segments\n(quintile baseline)", fillcolor="#f1c40f"];
   GOLD_C [label="Gold: churn_scores", fillcolor="#f1c40f"];
+  DYNAMO [label="DynamoDB\ncustomer_scores\n(real-time serving lookup)", shape=cylinder, fillcolor="#2e86c1", fontcolor="white"];
 
   GLUE [label="AWS Glue Data Catalog", shape=component, fillcolor="#d6eaf8"];
   ATHENA [label="Athena", fillcolor="#d6eaf8"];
@@ -43,16 +44,16 @@ digraph DataPlatform {
 
   BRONZE -> SILVERJOB [label="dedup by event_id,\nvalidate, standardize"];
   SILVERJOB -> SILVER;
-  SILVER -> GOLDJOB [label="RFM window calc\ncutoff T = as_of-60d"];
+  SILVER -> GOLDJOB [label="live: as_of=now(),\nno held-out gap\n(offline train/eval:\ncutoff T = as_of-60d)"];
   GOLDJOB -> GOLD_F;
   GOLDJOB -> GOLD_S;
   GOLDJOB -> GOLD_C;
+  GOLDJOB -> DYNAMO [label="every run\n(--dynamodb-table)", color="#2e86c1"];
 
   COMPACTJOB -> BRONZE [style=dashed, dir=back];
   COMPACTJOB -> SILVER [style=dashed, dir=back];
   COMPACTJOB -> GOLD_F [style=dashed, dir=back];
 
-  BRONZE -> GLUE [style=dotted];
   SILVER -> GLUE [style=dotted];
   GOLD_F -> GLUE [style=dotted];
   GLUE -> ATHENA;
