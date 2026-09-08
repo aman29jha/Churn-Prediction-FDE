@@ -64,7 +64,7 @@ variable "dags_git_repo" {
 }
 
 variable "image_tag" {
-  description = "Git-SHA-based tag for the 3 Docker images already pushed to ECR (see docs/architecture/08-infrastructure.md). Suffixed -amd64: the first push (sha-83887be) was built natively on Apple Silicon (arm64) and crashed on Fargate's amd64 nodes with 'exec format error' — rebuilt with `docker buildx build --platform linux/amd64`. Bumped to sha-671a6f3-amd64: spark-jobs's _write_iceberg now evolves the target Iceberg schema (ALTER TABLE ADD COLUMNS) before MERGE, fixing a live failure when gold_transform's new run_date column didn't exist on tables bootstrapped before it was added; api-service and console content unchanged, rebuilt/retagged only to keep all 3 images on one shared per-commit tag."
+  description = "Git-SHA-based tag for the 3 Docker images already pushed to ECR (see docs/architecture/08-infrastructure.md). Suffixed -amd64: the first push (sha-83887be) was built natively on Apple Silicon (arm64) and crashed on Fargate's amd64 nodes with 'exec format error' — rebuilt with `docker buildx build --platform linux/amd64`. Bumped to sha-a274917-amd64: real production ingest (S3 Bronze writes, not a local file), rolling as_of=now() live scoring, real DynamoDB read/write for /score, scheduled model retraining pushing to the S3 model registry — see commits e44cfd0/a274917. console content unchanged, rebuilt/retagged only to keep all 3 images on one shared per-commit tag."
   type        = string
-  default     = "sha-671a6f3-amd64"
+  default     = "sha-a274917-amd64"
 }
