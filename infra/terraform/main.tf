@@ -74,7 +74,14 @@ module "messaging" {
   vpc_id                        = module.networking.vpc_id
   private_subnet_ids            = module.networking.private_subnet_ids
   eks_cluster_security_group_id = module.eks.cluster_security_group_id
-  airflow_api_url               = "http://airflow-webserver.churn-service.svc:8080/api/v1"
+  # Real bug found live-testing this Lambda's first-ever invocation: the
+  # internal cluster-DNS hostname (airflow-webserver.churn-service.svc)
+  # is only resolvable via CoreDNS, which Kubernetes pods get through
+  # kubelet-injected /etc/resolv.conf — a VPC-attached Lambda has no such
+  # resolver and can never reach it, regardless of auth. Pointed instead
+  # at the same public ALB + nginx-prefix-strip path everything else in
+  # this service already uses (console, API, Spark History).
+  airflow_api_url               = "http://${module.workloads.ingress_hostname}/airflow/api/v1"
   airflow_api_username          = var.airflow_api_username
   airflow_api_password          = var.airflow_api_password
   alarm_topic_arn               = module.observability.alarm_topic_arn
