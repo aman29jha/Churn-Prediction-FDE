@@ -43,7 +43,7 @@ with DAG(
         task_id="run_training_pipeline",
         namespace="churn-service",
         name="training",
-        image="784004375291.dkr.ecr.ap-south-1.amazonaws.com/churn-fde-sandbox-api-service:sha-359d713-amd64",
+        image="784004375291.dkr.ecr.ap-south-1.amazonaws.com/churn-fde-sandbox-api-service:sha-1633705-amd64",
         cmds=["python", "-m", "scripts.run_training_pipeline"],
         service_account_name="spark-jobs",
         # Real bug this DAG would have hit on its first-ever trigger (same

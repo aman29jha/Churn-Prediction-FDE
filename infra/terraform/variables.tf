@@ -69,7 +69,7 @@ variable "dags_git_repo" {
 }
 
 variable "image_tag" {
-  description = "Git-SHA-based tag for the 3 Docker images already pushed to ECR (see docs/architecture/08-infrastructure.md). Suffixed -amd64: the first push (sha-83887be) was built natively on Apple Silicon (arm64) and crashed on Fargate's amd64 nodes with 'exec format error' — rebuilt with `docker buildx build --platform linux/amd64`. Bumped to sha-359d713-amd64: fixed two real bugs found checking the Analytics dashboard's own numbers against the known 1,280-customer population (/analytics/segments summed across all historical run_dates instead of the latest snapshot; kpi_daily's push_open_rate/campaign_click_rate used a same-day ratio that could exceed 100%, redefined as cumulative), plus a real SparkJobFailure CloudWatch metric the dashboard's own panel title had promised but nothing ever emitted."
+  description = "Git-SHA-based tag for the 3 Docker images already pushed to ECR (see docs/architecture/08-infrastructure.md). Suffixed -amd64: the first push (sha-83887be) was built natively on Apple Silicon (arm64) and crashed on Fargate's amd64 nodes with 'exec format error' — rebuilt with `docker buildx build --platform linux/amd64`. Bumped to sha-1633705-amd64: fixed a critical, hours-long-silent bug — live ingest events were written to bronze/live/ (a subdirectory), and Spark's directory JSON reader never descends into subdirectories by default, so silver_transform kept 'succeeding' every run while never once seeing a live event. Fixed by writing flat, directly under bronze/, matching where the bootstrap files already sit."
   type        = string
-  default     = "sha-359d713-amd64"
+  default     = "sha-1633705-amd64"
 }
