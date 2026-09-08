@@ -204,11 +204,18 @@ def ingest_events(batch: IngestBatch, request: Request, _auth: str = Depends(req
         # (infra/terraform/modules/messaging) to auto-trigger
         # medallion_pipeline_dag. A JSON array (not NDJSON) since
         # silver_transform's Spark reader uses multiLine=true.
+        #
+        # Deliberately flat filenames, no date=/hour= partition-style
+        # subdirectories: real failure hit live-testing this exact path —
+        # Spark's partition inference chokes when a prefix mixes Hive-style
+        # partitioned subdirectories with plain sibling files (the
+        # bootstrap load's bronze/synthetic_events.json,
+        # bronze/raw_sample_events.json), raising "AssertionError:
+        # Conflicting directory structures detected" on read. silver_transform
+        # reads the whole bronze/ prefix flatly every run anyway, so
+        # partition directories bought nothing here regardless.
         now = datetime.now(timezone.utc)
-        key = (
-            f"bronze/live/date={now:%Y-%m-%d}/hour={now:%H}/"
-            f"batch-{now.strftime('%Y%m%dT%H%M%S')}-{uuid.uuid4().hex[:8]}.json"
-        )
+        key = f"bronze/live/batch-{now.strftime('%Y%m%dT%H%M%S')}-{uuid.uuid4().hex[:8]}.json"
         body = "[" + ",".join(event.model_dump_json() for event in batch.events) + "]"
         boto3.client("s3").put_object(Bucket=DATA_LAKE_BUCKET, Key=key, Body=body.encode())
     else:
