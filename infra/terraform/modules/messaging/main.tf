@@ -149,8 +149,9 @@ resource "aws_lambda_function" "trigger_pipeline" {
 
   environment {
     variables = {
-      AIRFLOW_API_URL   = var.airflow_api_url
-      AIRFLOW_API_TOKEN = var.airflow_api_token
+      AIRFLOW_API_URL      = var.airflow_api_url
+      AIRFLOW_API_USERNAME = var.airflow_api_username
+      AIRFLOW_API_PASSWORD = var.airflow_api_password
     }
   }
 

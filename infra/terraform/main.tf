@@ -75,7 +75,8 @@ module "messaging" {
   private_subnet_ids            = module.networking.private_subnet_ids
   eks_cluster_security_group_id = module.eks.cluster_security_group_id
   airflow_api_url               = "http://airflow-webserver.churn-service.svc:8080/api/v1"
-  airflow_api_token             = var.airflow_api_token
+  airflow_api_username          = var.airflow_api_username
+  airflow_api_password          = var.airflow_api_password
   alarm_topic_arn               = module.observability.alarm_topic_arn
 }
 

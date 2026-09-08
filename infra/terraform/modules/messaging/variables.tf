@@ -9,7 +9,11 @@ variable "airflow_api_url" {
   type        = string
   description = "Internal ClusterIP/service URL for the Airflow webserver API, e.g. http://airflow-webserver.churn-service.svc:8080/api/v1 — only resolvable from inside the VPC, which is why this Lambda runs with vpc_config."
 }
-variable "airflow_api_token" {
+variable "airflow_api_username" {
+  type    = string
+  default = "admin"
+}
+variable "airflow_api_password" {
   type      = string
   sensitive = true
 }

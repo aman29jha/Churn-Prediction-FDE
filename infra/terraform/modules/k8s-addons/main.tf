@@ -498,6 +498,17 @@ resource "helm_release" "airflow" {
       kubernetes_executor = {
         delete_worker_pods_on_failure = "False"
       }
+      # Real bug found before this Lambda's first-ever real invocation
+      # (it had never fired — Bronze got no real writes until
+      # src/service/app.py's ingest fix): the default auth backend here
+      # is session (cookie-based), which a Lambda calling the REST API
+      # with a bearer token can never satisfy. basic_auth lets it
+      # authenticate as the chart's own stock admin/admin user (already
+      # documented in SUBMISSION.md) — session stays enabled too so the
+      # browser UI login is unaffected.
+      api = {
+        auth_backends = "airflow.api.auth.backend.basic_auth,airflow.api.auth.backend.session"
+      }
     }
     scheduler = {
       replicas = 1 # minimal/lite — no HA, sized for a demo not production scale

@@ -50,11 +50,16 @@ variable "tags" {
   default = {}
 }
 
-variable "airflow_api_token" {
-  description = "Bearer token the trigger Lambda uses to call Airflow's REST API. Generated post-deploy (Airflow API auth setup) and passed via -var or a tfvars file that's gitignored — never committed."
+variable "airflow_api_username" {
+  description = "Basic auth username the trigger Lambda uses to call Airflow's REST API — the chart's stock defaultUser (see SUBMISSION.md), not a secret."
+  type        = string
+  default     = "admin"
+}
+variable "airflow_api_password" {
+  description = "Basic auth password the trigger Lambda uses to call Airflow's REST API. Real Airflow REST API auth (basic_auth, see modules/k8s-addons) needs actual Basic-scheme credentials — a bearer token was never valid here. Passed via -var or a tfvars file that's gitignored — never committed."
   type        = string
   sensitive   = true
-  default     = ""
+  default     = "admin"
 }
 
 variable "dags_git_repo" {
