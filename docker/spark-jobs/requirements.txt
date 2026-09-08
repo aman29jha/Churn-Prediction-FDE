@@ -7,3 +7,9 @@ pandas<2.0
 numpy<2.0
 xgboost
 scikit-learn
+# boto3: needed by scripts/spark_job_entrypoint.py's _write_dynamodb —
+# the gold job's --dynamodb-table write is a direct Python boto3 call
+# from the driver, not a Spark-native write (unlike S3/Iceberg, which go
+# through Hadoop-AWS's Java SDK via spark.hadoop.fs.s3a.*, no boto3
+# involved at all).
+boto3
