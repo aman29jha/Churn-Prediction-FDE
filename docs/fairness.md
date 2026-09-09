@@ -1,6 +1,6 @@
 # Fairness / Bias Check
 
-Methodology below; real findings from `scripts/run_training_pipeline.py` against the 1,200-customer synthetic dataset follow at the end (raw output in `reports/fairness.json`).
+Methodology below; real findings from `scripts/run_training_pipeline.py` against the 1,280-customer population (1,200-customer synthetic bootstrap + the 80-customer real sample) follow at the end (raw output in `reports/fairness.json`).
 
 ## What we slice on
 
@@ -32,7 +32,7 @@ Not "retrain a separate model per segment" — that adds real maintenance burden
 
 This check validates our *methodology* for finding and reasoning about fairness gaps. It does not, and cannot, tell us anything about real disparities in Localytics' actual customer base, because the subgroup labels themselves are invented. The value of doing this well is demonstrating the check is built into the design from the start (per the assignment's own "not bolted on at the end" evaluation criterion), not that the specific numbers generalize.
 
-## Real findings (1,200-customer synthetic dataset, test set n=180, overall FNR = 0.4375)
+## Real findings (1,280-customer population (1,200-customer synthetic bootstrap + the 80-customer real sample), test set n=192, overall FNR = 0.4375)
 
 Sliced on `plan_tier` (3 values), `acquisition_channel` (4 values), `region` (4 values) — 11 subgroups checked in total.
 

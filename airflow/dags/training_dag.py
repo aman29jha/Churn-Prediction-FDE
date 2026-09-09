@@ -15,13 +15,19 @@ sync-model-artifacts initContainer reads from before every scoring run
 genuinely changes what medallion_pipeline_dag scores customers with next,
 not just a local artifact nobody reads.
 
-Honest limitation: the labeled training set itself (data/synthetic/,
-regenerated fresh from src/data_gen/bootstrap.py's fixed archetypes each
-run) doesn't yet grow from live traffic — a live-simulator event needs a
-full 60-day forward window before its outcome is even knowable, so there
-isn't new ground truth to train on yet from a demo-length trickle. What's
-real here is the full retrain -> S3 push -> next Gold run picks it up
-loop, not (yet) the training *data* itself accumulating live signal.
+The training set itself now genuinely grows from live traffic too:
+DATA_LAKE_BUCKET (below) makes run_training_pipeline.py read the real,
+live-accumulating Silver Iceberg table instead of regenerating a fixed
+synthetic snapshot. Whether that translates into a *different* model
+each day depends on select_as_of's guardrail (src/modeling/train.py):
+it tries training with as_of=now() first, and only uses it if the
+resulting label balance is healthy — live_simulator's trickle touches
+too few customers per run for that yet, so today this still falls back
+to the original bootstrap's validated historical cutoff. The day real
+traffic is dense enough, this starts training on genuinely fresh data
+automatically, no code change needed — see reports/training_diagnostics.json
+(pushed to the model registry alongside the model) for exactly which
+as_of was used on any given run, and why.
 """
 from datetime import datetime
 
@@ -51,7 +57,10 @@ with DAG(
         # "apps" Fargate profile requires this label, or the pod has
         # nowhere to schedule at all.
         labels={"fargate-scheduled": "true"},
-        env_vars={"MODEL_REGISTRY_BUCKET": "churn-fde-sandbox-model-registry-784004375291"},
+        env_vars={
+            "MODEL_REGISTRY_BUCKET": "churn-fde-sandbox-model-registry-784004375291",
+            "DATA_LAKE_BUCKET": "churn-fde-sandbox-data-lake-784004375291",
+        },
         container_resources=k8s.V1ResourceRequirements(
             requests={"cpu": "500m", "memory": "1Gi"},
             limits={"cpu": "1", "memory": "2Gi"},

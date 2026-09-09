@@ -1,6 +1,6 @@
 # Explainability
 
-Methodology below; real findings from `scripts/run_training_pipeline.py` against the 1,200-customer synthetic dataset follow at the end (raw output in `reports/global_shap_importance.png` and `reports/example_explanation.json`).
+Methodology below; real findings from `scripts/run_training_pipeline.py` against the 1,280-customer population (1,200-customer synthetic bootstrap + the 80-customer real sample) follow at the end (raw output in `reports/global_shap_importance.png` and `reports/example_explanation.json`).
 
 ## Why three layers, not just a SHAP plot
 
@@ -40,7 +40,7 @@ The `/score/{customer_id}` API response includes an `explanation` field:
 ```
 This matters because a real campaign tool needs to consume "why" programmatically (e.g. to decide *which* win-back offer to send — a recency-driven risk might get a re-engagement push, a monetary-driven risk might get a discount) — not just render a picture for a human.
 
-## Real findings (1,200-customer synthetic dataset)
+## Real findings (1,280-customer population (1,200-customer synthetic bootstrap + the 80-customer real sample))
 
 **Global importance** (mean |SHAP value| across the test set):
 

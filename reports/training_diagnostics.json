@@ -1,0 +1,11 @@
+{
+  "candidate_as_of": "2026-09-09T03:00:09.717741+00:00",
+  "candidate_positive_rate": 0.3633,
+  "fallback_as_of": "2024-06-01T12:00:00+00:00",
+  "acceptable_band": [
+    0.22,
+    0.32
+  ],
+  "chosen_as_of": "2024-06-01T12:00:00+00:00",
+  "reason": "candidate as_of's churn rate (36.3%) falls outside the [22%, 32%] sane band -- live traffic isn't dense enough yet to retrain on real-time data without the label collapsing"
+}

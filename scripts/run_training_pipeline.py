@@ -1,14 +1,34 @@
 """
-End-to-end local pipeline: generate/load synthetic data -> RFM features +
-label -> baseline vs. XGBoost -> evaluation -> explainability -> fairness.
+End-to-end training pipeline: load events -> RFM features + label ->
+baseline vs. XGBoost -> evaluation -> explainability -> fairness.
 
 Run: python -m scripts.run_training_pipeline
 Produces reports/metrics.json, reports/fairness.json, reports/global_shap_importance.png
+
+Data source (real production behavior, not a hypothetical): when
+DATA_LAKE_BUCKET is set (the deployed environment), this reads the real,
+live-accumulating Silver Iceberg table's plain-Parquet output — the same
+data lineage gold_transform scores from — instead of regenerating a fixed
+synthetic snapshot. That's the real 1,200-customer bootstrap population
+AND the 80-customer real sample (both already flow through Silver), plus
+whatever live_simulator has trickled in since. Local dev/tests (no
+DATA_LAKE_BUCKET) still regenerate the fixed-seed synthetic dataset
+exactly as before, keeping that workflow untouched.
+
+as_of is chosen by select_as_of (src/modeling/train.py), not hardcoded:
+it tries the current time first, and only adopts it if the resulting
+label balance is healthy -- otherwise it falls back to the original
+bootstrap's validated historical cutoff. See that function's docstring
+for the full reasoning. This is what makes "the model improves over
+time" actually true eventually, without a manual cutover: the day
+live traffic is dense enough, this starts training on genuinely fresh
+data automatically.
 """
 from __future__ import annotations
 
 import json
 import os
+from datetime import datetime, timezone
 from pathlib import Path
 
 import matplotlib
@@ -22,29 +42,68 @@ from src.modeling.baseline import fit_rfm_quintile_baseline
 from src.modeling.evaluate import capacity_selection_mask, compare_baseline_vs_model, evaluate_scores
 from src.modeling.explain import build_explainer, explain_customer, global_feature_importance
 from src.modeling.fairness import full_fairness_report
-from src.modeling.train import FEATURE_COLUMNS, prepare_dataset, split_dataset, train_xgboost
+from src.modeling.train import FEATURE_COLUMNS, prepare_dataset, select_as_of, split_dataset, train_xgboost
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 DATA_DIR = REPO_ROOT / "data" / "synthetic"
 REPORTS_DIR = REPO_ROOT / "reports"
 MODELS_DIR = REPO_ROOT / "models"
 MODEL_REGISTRY_BUCKET = os.environ.get("MODEL_REGISTRY_BUCKET")
+DATA_LAKE_BUCKET = os.environ.get("DATA_LAKE_BUCKET")
 
 
-def main():
-    REPORTS_DIR.mkdir(exist_ok=True)
+def _load_real_data() -> tuple[pd.DataFrame, pd.DataFrame]:
+    events = pd.read_parquet(f"s3://{DATA_LAKE_BUCKET}/silver/events/")
+    import boto3
 
+    registry_body = boto3.client("s3").get_object(
+        Bucket=DATA_LAKE_BUCKET, Key="sim-state/customer_registry.json"
+    )["Body"].read()
+    registry = pd.DataFrame(json.loads(registry_body))
+    return events, registry
+
+
+def _load_local_synthetic_data() -> tuple[pd.DataFrame, pd.DataFrame]:
     events_path = DATA_DIR / "synthetic_events.json"
     registry_path = DATA_DIR / "customer_registry.json"
     if not events_path.exists():
         print("Generating synthetic dataset (not found on disk)...")
         write_dataset(DATA_DIR, n_customers=1200, seed=42)
-
     events = pd.DataFrame(json.loads(events_path.read_text()))
     registry = pd.DataFrame(json.loads(registry_path.read_text()))
+    return events, registry
 
-    dataset = prepare_dataset(events, registry, as_of=AS_OF, feature_window_days=60)
+
+def main():
+    REPORTS_DIR.mkdir(exist_ok=True)
+
+    if DATA_LAKE_BUCKET:
+        print(f"Reading real accumulated events from s3://{DATA_LAKE_BUCKET}/silver/events/ ...")
+        events, registry = _load_real_data()
+    else:
+        events, registry = _load_local_synthetic_data()
+    print(f"Loaded {len(events)} events across {events['customer_id'].nunique()} customers")
+
+    chosen_as_of, as_of_diagnostics = select_as_of(
+        events, candidate_as_of=pd.Timestamp(datetime.now(timezone.utc)), fallback_as_of=AS_OF,
+    )
+    print(f"\n=== as_of selection ===\n{json.dumps(as_of_diagnostics, indent=2)}")
+    (REPORTS_DIR / "training_diagnostics.json").write_text(json.dumps(as_of_diagnostics, indent=2))
+
+    dataset = prepare_dataset(events, registry, as_of=chosen_as_of, feature_window_days=60)
     print(f"Dataset: {len(dataset)} customers, churn rate = {dataset['churn'].mean():.1%}")
+
+    # Real-sample customers (data/events.json's 80 real customers, already
+    # flowing through Silver alongside the synthetic bootstrap population)
+    # have no entry in the synthetic customer_registry.json, so they carry
+    # NaN plan_tier/acquisition_channel/region after the left-merge in
+    # prepare_dataset. They're still real, valid training examples (XGBoost
+    # only uses FEATURE_COLUMNS) -- only fairness slicing, which groups by
+    # those segment columns, needs them excluded.
+    missing_registry = dataset["plan_tier"].isna().sum()
+    if missing_registry:
+        print(f"{missing_registry} customer(s) have no registry segment data (real-sample customers) "
+              f"-- included in training, excluded from fairness slicing below.")
 
     split = split_dataset(dataset, seed=42)
     print(f"Train/val/test sizes: {len(split.train)}/{len(split.val)}/{len(split.test)}")
@@ -103,6 +162,10 @@ def main():
     fairness_df = split.test.copy()
     fairness_df["model_score"] = model_scores
     fairness_df["predicted_churn"] = capacity_selection_mask(model_scores, capacity=0.15).astype(int)
+    # Real-sample customers have no registry segment data (see above) --
+    # can't be sliced by plan_tier/acquisition_channel/region, so they're
+    # excluded here specifically, not from training.
+    fairness_df = fairness_df.dropna(subset=["plan_tier", "acquisition_channel", "region"])
 
     fairness_report = full_fairness_report(
         fairness_df, y_true_col="churn", y_pred_col="predicted_churn",
@@ -150,7 +213,11 @@ def main():
         s3 = boto3.client("s3")
         for filename in ["xgboost_model.json", "feature_columns.json", "baseline.pkl", "customer_scores.json"]:
             s3.upload_file(str(MODELS_DIR / filename), MODEL_REGISTRY_BUCKET, filename)
-        print(f"Pushed {4} model registry artifacts to s3://{MODEL_REGISTRY_BUCKET}/")
+        # training_diagnostics.json (which as_of was used and why) travels
+        # alongside the model artifacts so it's inspectable without needing
+        # this specific pod's logs -- see select_as_of's docstring.
+        s3.upload_file(str(REPORTS_DIR / "training_diagnostics.json"), MODEL_REGISTRY_BUCKET, "training_diagnostics.json")
+        print(f"Pushed 5 model registry artifacts to s3://{MODEL_REGISTRY_BUCKET}/")
 
     return comparison, importance, fairness_report, findings
 

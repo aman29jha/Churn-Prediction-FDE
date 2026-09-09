@@ -1,26 +1,26 @@
 {
-  "base_value": 0.0019341475563123822,
+  "base_value": -0.0063583822920918465,
   "explanation": [
     {
       "feature": "recency_days",
-      "value": 166.62860940870044,
-      "shap_value": 5.559269428253174,
+      "value": 96.35970878274306,
+      "shap_value": 4.023167133331299,
       "direction": "increases_risk"
     },
     {
-      "feature": "lifetime_revenue",
-      "value": 80.92,
-      "shap_value": 0.5814401507377625,
+      "feature": "push_open_rate",
+      "value": 0.4,
+      "shap_value": 0.6454630494117737,
       "direction": "increases_risk"
     },
     {
-      "feature": "avg_session_duration_90d",
+      "feature": "frequency_90d",
       "value": 0.0,
-      "shap_value": 0.4270809292793274,
+      "shap_value": 0.2764281630516052,
       "direction": "increases_risk"
     }
   ],
-  "plain_language": "This customer's churn risk is elevated mainly because of how long it's been since their last app session and their total spend history.",
-  "customer_id": "syn_cust_00936",
-  "churn_probability": 0.9991101622581482
+  "plain_language": "This customer's churn risk is elevated mainly because of how long it's been since their last app session and how often they open push notifications.",
+  "customer_id": "syn_cust_00339",
+  "churn_probability": 0.9941312670707703
 }
