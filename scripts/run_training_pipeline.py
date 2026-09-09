@@ -36,6 +36,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+from sklearn.metrics import precision_recall_curve
 
 from src.data_gen.bootstrap import AS_OF, write_dataset
 from src.modeling.baseline import fit_rfm_quintile_baseline
@@ -130,6 +131,39 @@ def main():
     print("\n=== Baseline vs XGBoost (test set) ===")
     print(comparison.round(4).to_string())
     comparison.round(6).to_json(REPORTS_DIR / "metrics.json", orient="index", indent=2)
+
+    # --- PR curve: the actual curve behind the PR-AUC number, not just the
+    # scalar. Saved as both a plotted PNG (docs/evaluation.md) and raw
+    # (precision, recall) points (reports/pr_curve.json) so the "Can We
+    # Trust This Model?" artifact can draw it from real data, not a
+    # freehand approximation.
+    base_rate = float(y_test.mean())
+    baseline_p, baseline_r, _ = precision_recall_curve(y_test, baseline_risk_scores)
+    xgb_p, xgb_r, _ = precision_recall_curve(y_test, model_scores)
+    pr_curve_data = {
+        "base_rate": round(base_rate, 6),
+        "baseline": {"precision": [round(v, 4) for v in baseline_p], "recall": [round(v, 4) for v in baseline_r]},
+        "xgboost": {"precision": [round(v, 4) for v in xgb_p], "recall": [round(v, 4) for v in xgb_r]},
+        "pr_auc": {"baseline": round(float(comparison.loc["baseline", "pr_auc"]), 4),
+                   "xgboost": round(float(comparison.loc["xgboost", "pr_auc"]), 4)},
+    }
+    (REPORTS_DIR / "pr_curve.json").write_text(json.dumps(pr_curve_data, indent=2))
+
+    fig, ax = plt.subplots(figsize=(7, 5))
+    ax.plot(xgb_r, xgb_p, color="#3454D1", linewidth=2, label=f"XGBoost (PR-AUC={pr_curve_data['pr_auc']['xgboost']:.3f})")
+    ax.plot(baseline_r, baseline_p, color="#8891A2", linewidth=2, linestyle="--",
+            label=f"RFM baseline (PR-AUC={pr_curve_data['pr_auc']['baseline']:.3f})")
+    ax.axhline(base_rate, color="#C93E52", linewidth=1, linestyle=":", label=f"No-skill (base rate={base_rate:.3f})")
+    ax.set_xlabel("Recall")
+    ax.set_ylabel("Precision")
+    ax.set_title("Precision-Recall curve — churn model vs. baseline")
+    ax.set_xlim(0, 1)
+    ax.set_ylim(0, 1.02)
+    ax.legend(loc="lower left")
+    fig.tight_layout()
+    fig.savefig(REPORTS_DIR / "pr_curve.png", dpi=150)
+    plt.close(fig)
+    print(f"\nSaved PR curve to reports/pr_curve.png and reports/pr_curve.json")
 
     # --- Explainability ---
     explainer = build_explainer(model)

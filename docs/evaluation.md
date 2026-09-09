@@ -36,14 +36,20 @@ Produced by `scripts/run_training_pipeline.py`; raw output in `reports/metrics.j
 
 | Metric | Baseline (RFM quintile rule) | XGBoost |
 |---|---|---|
-| PR-AUC | 0.822 | **0.922** |
-| Recall @ precision ≥ 40% | 1.000 | 1.000 |
+| PR-AUC | 0.813 | **0.919** |
+| Recall @ precision ≥ 40% | 0.981 | **1.000** |
 | Top-decile capture | 0.333 | **0.352** |
-| F2 @ capacity threshold (top 15%) | 0.551 | **0.571** |
-| Precision @ capacity threshold | 0.931 | **0.966** |
-| Recall @ capacity threshold | 0.500 | **0.519** |
-| Brier score | 0.148 | **0.070** |
+| F2 @ capacity threshold (top 15%) | 0.571 | **0.592** |
+| Precision @ capacity threshold | 0.966 | **1.000** |
+| Recall @ capacity threshold | 0.519 | **0.537** |
+| Brier score | 0.178 | **0.079** |
 
-XGBoost beats the baseline on every metric. Both models reach full recall if precision is allowed to drop to 40%, which isn't surprising given the churn base rate (28.1%) isn't extreme. The metrics that actually reflect the operating constraint (fixed 15% campaign capacity) — precision/recall/F2 at that threshold, plus PR-AUC and calibration — show a clear, consistent improvement.
+![Precision-Recall curve — XGBoost vs. baseline vs. no-skill](../reports/pr_curve.png)
+
+The curve above is what the PR-AUC number in the table actually summarizes — precision vs. recall swept across *every* possible threshold, not just the 15% capacity cutoff. XGBoost's curve sits above the baseline's almost everywhere, and both sit well above the red no-skill line (a model with zero ranking ability would track the population's base churn rate, ~28%, flat across every recall level). Raw curve points in `reports/pr_curve.json`.
+
+XGBoost beats the baseline on every metric. Both models reach near-full recall if precision is allowed to drop to 40%, which isn't surprising given the churn base rate (28.1%) isn't extreme. The metrics that actually reflect the operating constraint (fixed 15% campaign capacity) — precision/recall/F2 at that threshold, plus PR-AUC and calibration — show a clear, consistent improvement.
+
+**A note on exact decimals**: none of the three deployed images pin `xgboost`/`scikit-learn`/`numpy`/`pandas` versions (see `SUBMISSION.md`), so a training run in the deployed container can produce slightly different decimal metrics than a local run against the same seed and the same data — both real, both showing the same consistent XGBoost-beats-baseline story. The numbers above are from one specific, reproducible run (historical `as_of`, matching what `training_dag` currently has deployed).
 
 **A real bug found and fixed while producing these numbers**: the baseline's combined RFM score only takes ~13 distinct integer values (range 3-15). A naive "select everyone scoring ≥ the 85th-percentile threshold" over-selected to ~30% of customers instead of the intended 15%, because so many customers tied at the threshold value. Fixed by selecting exactly the top-N by rank (`capacity_selection_mask` in `src/modeling/evaluate.py`) regardless of ties, so the baseline and XGBoost are compared at a genuinely fixed, equal budget — otherwise the baseline's numbers would have looked artificially strong from simply contacting twice as many customers.
