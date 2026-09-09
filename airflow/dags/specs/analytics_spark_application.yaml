@@ -10,7 +10,7 @@ metadata:
 spec:
   type: Python
   mode: cluster
-  image: "784004375291.dkr.ecr.ap-south-1.amazonaws.com/churn-fde-sandbox-spark-jobs:sha-a395d14-amd64"
+  image: "784004375291.dkr.ecr.ap-south-1.amazonaws.com/churn-fde-sandbox-spark-jobs:sha-06086a5-amd64"
   imagePullPolicy: IfNotPresent
   mainApplicationFile: local:///app/scripts/spark_job_entrypoint.py
   # Real bug found by actually triggering this for the first time (it had

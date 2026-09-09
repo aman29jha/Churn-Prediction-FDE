@@ -29,7 +29,7 @@ with DAG(
         task_id="run_live_simulator",
         namespace="churn-service",
         name="live-simulator",
-        image="784004375291.dkr.ecr.ap-south-1.amazonaws.com/churn-fde-sandbox-api-service:sha-a395d14-amd64",
+        image="784004375291.dkr.ecr.ap-south-1.amazonaws.com/churn-fde-sandbox-api-service:sha-06086a5-amd64",
         cmds=["python", "-m", "src.data_gen.live_simulator"],
         service_account_name="spark-jobs",  # reuses the S3-read-capable IRSA role; ingest itself is auth'd via bearer token, not IAM
         # Real bug found by actually triggering this DAG: the "apps" Fargate
