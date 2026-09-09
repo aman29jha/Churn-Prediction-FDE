@@ -20,3 +20,10 @@ matplotlib
 # under the hood (pd.read_json("s3://...") silently needs this installed).
 requests
 s3fs
+# pyarrow: needed by scripts/run_training_pipeline.py's real-Silver-data
+# path (pd.read_parquet("s3://.../silver/events/")) — real bug found
+# live-triggering training_dag after that change: pandas' read_parquet
+# has no built-in engine, it delegates to pyarrow/fastparquet, and this
+# image never had either (worked locally only because pyarrow happened
+# to already be installed in the dev .venv via an unrelated dependency).
+pyarrow
