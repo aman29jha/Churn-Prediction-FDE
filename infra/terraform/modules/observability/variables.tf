@@ -7,3 +7,4 @@ variable "alarm_email" {
   default = ""
 }
 variable "customer_scores_table_name" { type = string }
+variable "trigger_lambda_function_name" { type = string }

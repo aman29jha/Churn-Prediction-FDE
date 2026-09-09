@@ -113,7 +113,39 @@ resource "aws_cloudwatch_dashboard" "main" {
             # scripts/spark_job_entrypoint.py now does, per job type.
             ["ChurnService", "SparkJobFailure", "JobType", "silver", { "stat" : "Sum" }],
             ["ChurnService", "SparkJobFailure", "JobType", "gold", { "stat" : "Sum" }],
-            ["ChurnService", "SparkJobFailure", "JobType", "analytics", { "stat" : "Sum" }]
+            ["ChurnService", "SparkJobFailure", "JobType", "analytics", { "stat" : "Sum" }],
+            # compaction runs through the same entrypoint and emits the same
+            # metric on failure — it just hadn't been added to this panel's
+            # series list, a real gap found auditing dashboard coverage.
+            ["ChurnService", "SparkJobFailure", "JobType", "compaction", { "stat" : "Sum" }]
+          ]
+        }
+      },
+      {
+        type       = "text", x = 0, y = 13, width = 24, height = 1,
+        properties = { markdown = "## Trigger chain: the S3->SNS->SQS->Lambda->Airflow hop (2 real bugs found here this project — bearer-vs-basic auth, then a urllib/proxy-detection bug)" }
+      },
+      {
+        type = "metric", x = 0, y = 14, width = 12, height = 6,
+        properties = {
+          title  = "Trigger Lambda: errors / throttles"
+          view   = "timeSeries"
+          region = var.aws_region
+          metrics = [
+            ["AWS/Lambda", "Errors", "FunctionName", var.trigger_lambda_function_name, { "stat" : "Sum" }],
+            ["AWS/Lambda", "Throttles", "FunctionName", var.trigger_lambda_function_name, { "stat" : "Sum" }]
+          ]
+        }
+      },
+      {
+        type = "metric", x = 12, y = 14, width = 12, height = 6,
+        properties = {
+          title  = "Trigger Lambda: invocations / duration (p99)"
+          view   = "timeSeries"
+          region = var.aws_region
+          metrics = [
+            ["AWS/Lambda", "Invocations", "FunctionName", var.trigger_lambda_function_name, { "stat" : "Sum" }],
+            ["AWS/Lambda", "Duration", "FunctionName", var.trigger_lambda_function_name, { "stat" : "p99" }]
           ]
         }
       }

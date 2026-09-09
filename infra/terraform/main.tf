@@ -56,13 +56,14 @@ module "irsa" {
 }
 
 module "observability" {
-  source                     = "./modules/observability"
-  project                    = var.project
-  environment                = var.environment
-  aws_region                 = var.aws_region
-  log_retention_days         = var.log_retention_days
-  alarm_email                = var.budget_alarm_email
-  customer_scores_table_name = module.storage.customer_scores_table_name
+  source                       = "./modules/observability"
+  project                      = var.project
+  environment                  = var.environment
+  aws_region                   = var.aws_region
+  log_retention_days           = var.log_retention_days
+  alarm_email                  = var.budget_alarm_email
+  customer_scores_table_name   = module.storage.customer_scores_table_name
+  trigger_lambda_function_name = module.messaging.trigger_lambda_function_name
 }
 
 module "messaging" {
@@ -81,10 +82,10 @@ module "messaging" {
   # resolver and can never reach it, regardless of auth. Pointed instead
   # at the same public ALB + nginx-prefix-strip path everything else in
   # this service already uses (console, API, Spark History).
-  airflow_api_url               = "http://${module.workloads.ingress_hostname}/airflow/api/v1"
-  airflow_api_username          = var.airflow_api_username
-  airflow_api_password          = var.airflow_api_password
-  alarm_topic_arn               = module.observability.alarm_topic_arn
+  airflow_api_url      = "http://${module.workloads.ingress_hostname}/airflow/api/v1"
+  airflow_api_username = var.airflow_api_username
+  airflow_api_password = var.airflow_api_password
+  alarm_topic_arn      = module.observability.alarm_topic_arn
 }
 
 module "database" {
