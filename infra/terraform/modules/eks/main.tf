@@ -109,6 +109,41 @@ resource "aws_iam_role_policy_attachment" "fargate_pod_execution" {
   policy_arn = "arn:aws:iam::aws:policy/AmazonEKSFargatePodExecutionRolePolicy"
 }
 
+# Real gap found only by checking actual CloudWatch log group contents
+# (not just that the groups exist, which Terraform already guaranteed):
+# every one of the 8 log groups in modules/observability had zero log
+# streams, this entire project. Root cause: almost every pod in this
+# cluster runs on Fargate (see the "apps"/"system" profiles above), and
+# Fargate has no node for a DaemonSet to run on — it ships logs via its
+# own built-in log router instead, gated on this role having permissions
+# AND an `aws-logging` ConfigMap existing (see modules/k8s-addons) that
+# neither of which existed. Scoped to exactly the log groups
+# modules/observability already provisions, not a bare "*".
+data "aws_caller_identity" "fargate_logging" {}
+data "aws_region" "fargate_logging" {}
+
+resource "aws_iam_role_policy" "fargate_pod_execution_logs" {
+  name = "fargate-logging"
+  role = aws_iam_role.fargate_pod_execution.id
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Sid    = "ShipContainerLogs"
+      Effect = "Allow"
+      Action = [
+        "logs:CreateLogStream",
+        "logs:PutLogEvents",
+        "logs:DescribeLogStreams",
+        "logs:DescribeLogGroups",
+      ]
+      Resource = [
+        "arn:aws:logs:${data.aws_region.fargate_logging.id}:${data.aws_caller_identity.fargate_logging.account_id}:log-group:/eks/${var.project}-${var.environment}/*",
+        "arn:aws:logs:${data.aws_region.fargate_logging.id}:${data.aws_caller_identity.fargate_logging.account_id}:log-group:/eks/${var.project}-${var.environment}/*:*",
+      ]
+    }]
+  })
+}
+
 resource "aws_eks_fargate_profile" "system" {
   cluster_name           = aws_eks_cluster.this.name
   fargate_profile_name   = "system"

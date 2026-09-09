@@ -9,6 +9,135 @@ resource "kubernetes_namespace" "churn_service" {
   }
 }
 
+# --- Fargate log shipping: real gap found by checking actual CloudWatch
+# log group CONTENT, not just that modules/observability's 8 groups exist.
+# All 8 had zero log streams the entire project — a standard Fluent Bit
+# DaemonSet (the architecture docs' original assumption) can't fix this,
+# because DaemonSets can't schedule onto Fargate at all (no persistent
+# node to run on), and nearly every pod here IS Fargate-scheduled (see
+# modules/eks's "apps"/"system" profiles). Fargate ships logs via its own
+# built-in log router instead, activated only by this specific namespace
+# name + ConfigMap name existing (both AWS-mandated, not arbitrary) plus
+# the pod execution role having CloudWatch Logs permissions (added in
+# modules/eks). Routes each pod to the SAME per-component log group
+# modules/observability already provisions and the dashboard/docs already
+# reference — not a new catch-all group.
+resource "kubernetes_namespace" "aws_observability" {
+  metadata {
+    name = "aws-observability"
+    labels = {
+      aws-observability = "enabled"
+    }
+  }
+}
+
+resource "kubernetes_config_map" "aws_logging" {
+  metadata {
+    name      = "aws-logging"
+    namespace = kubernetes_namespace.aws_observability.metadata[0].name
+  }
+
+  data = {
+    "filters.conf" = <<-EOT
+      [FILTER]
+          Name parser
+          Match *
+          Key_name log
+          Parser crio
+
+      [FILTER]
+          Name kubernetes
+          Match kube.*
+          Merge_Log On
+          Keep_Log Off
+          Buffer_Size 0
+          Kube_Meta_Cache_TTL 300s
+
+      [FILTER]
+          Name rewrite_tag
+          Match kube.*
+          Rule $kubernetes['pod_name'] silver-transform log.spark-silver false
+          Rule $kubernetes['pod_name'] gold-transform log.spark-gold false
+          Rule $kubernetes['pod_name'] compaction log.spark-compaction false
+          Rule $kubernetes['pod_name'] analytics-transform log.spark-analytics false
+          Rule $kubernetes['pod_name'] live-simulator log.live-simulator false
+          Rule $kubernetes['pod_name'] ^api-service log.api-service false
+          Rule $kubernetes['pod_name'] ^console log.console false
+          Rule $kubernetes['pod_name'] ^airflow log.airflow false
+          Rule $kubernetes['pod_name'] ^training-dag log.airflow false
+          Rule $kubernetes['pod_name'] ^medallion-pipeline-dag log.airflow false
+          Rule $kubernetes['pod_name'] ^analytics-dag log.airflow false
+          Emitter_Name re_emitted
+    EOT
+
+    "output.conf" = <<-EOT
+      [OUTPUT]
+          Name cloudwatch_logs
+          Match log.api-service
+          region ${var.aws_region}
+          log_group_name /eks/${var.project}-${var.environment}/api-service
+          log_stream_prefix from-fluent-bit-
+          auto_create_group false
+
+      [OUTPUT]
+          Name cloudwatch_logs
+          Match log.console
+          region ${var.aws_region}
+          log_group_name /eks/${var.project}-${var.environment}/console
+          log_stream_prefix from-fluent-bit-
+          auto_create_group false
+
+      [OUTPUT]
+          Name cloudwatch_logs
+          Match log.spark-silver
+          region ${var.aws_region}
+          log_group_name /eks/${var.project}-${var.environment}/spark-silver
+          log_stream_prefix from-fluent-bit-
+          auto_create_group false
+
+      [OUTPUT]
+          Name cloudwatch_logs
+          Match log.spark-gold
+          region ${var.aws_region}
+          log_group_name /eks/${var.project}-${var.environment}/spark-gold
+          log_stream_prefix from-fluent-bit-
+          auto_create_group false
+
+      [OUTPUT]
+          Name cloudwatch_logs
+          Match log.spark-compaction
+          region ${var.aws_region}
+          log_group_name /eks/${var.project}-${var.environment}/spark-compaction
+          log_stream_prefix from-fluent-bit-
+          auto_create_group false
+
+      [OUTPUT]
+          Name cloudwatch_logs
+          Match log.spark-analytics
+          region ${var.aws_region}
+          log_group_name /eks/${var.project}-${var.environment}/spark-analytics
+          log_stream_prefix from-fluent-bit-
+          auto_create_group false
+
+      [OUTPUT]
+          Name cloudwatch_logs
+          Match log.live-simulator
+          region ${var.aws_region}
+          log_group_name /eks/${var.project}-${var.environment}/live-simulator
+          log_stream_prefix from-fluent-bit-
+          auto_create_group false
+
+      [OUTPUT]
+          Name cloudwatch_logs
+          Match log.airflow
+          region ${var.aws_region}
+          log_group_name /eks/${var.project}-${var.environment}/airflow
+          log_stream_prefix from-fluent-bit-
+          auto_create_group false
+    EOT
+  }
+}
+
 # nginx sidecar on the Airflow webserver pod strips the /airflow prefix
 # before proxying locally — same real ALB limitation as the Spark History
 # Server fix in modules/workloads (ALB can't rewrite paths; nginx-ingress
