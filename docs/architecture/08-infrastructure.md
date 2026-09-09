@@ -44,6 +44,10 @@ terraform apply -target=module.networking -target=module.eks   # phase 1
 terraform apply                                                  # phase 2
 ```
 
+![Infrastructure launch sequence](diagrams/08-infrastructure.svg)
+
+One tool, one state file, two ordered passes — not "Terraform provisions AWS, then a separate Helm step launches Kubernetes stuff." Phase 2's Helm releases (`module.k8s-addons`: the ALB controller, Karpenter, the Spark Operator, Airflow) are themselves `helm_release` resources managed by Terraform's own `helm` provider, applied in the same untargeted `terraform apply` as every other AWS-native resource — Helm is a provider Terraform drives, not a separate tool a human runs afterward. `module.workloads` (the application Deployments/Service/Ingress) goes through the plain `kubernetes` provider instead of Helm, since those are this project's own manifests, not a third-party chart — both still land in the same phase-2 apply, with an explicit `depends_on = [module.k8s_addons]` since the app pods need Karpenter's NodePools and the Fargate profile to actually exist first.
+
 The `kubernetes`, `helm`, and `kubectl` providers are configured against `module.eks`'s outputs. On a blank account those outputs don't exist yet, and the `kubectl_manifest`/`kubernetes_manifest` resources specifically need a *live* cluster to validate schema even during `plan` — a well-documented Terraform/EKS limitation, not a bug in this config. This was caught by actually running `terraform plan` against the real sandbox account, not just `terraform validate` (full story in the commit history and `docs/architecture/01-data-platform.md`'s Karpenter section).
 
 ## Cost controls actually embedded in the code (not just documented intentions)

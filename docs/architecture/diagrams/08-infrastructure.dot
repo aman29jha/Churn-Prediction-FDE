@@ -1,0 +1,55 @@
+digraph InfraLaunchSequence {
+  rankdir=TB;
+  graph [fontname="Helvetica", fontsize=11, bgcolor="white", pad=0.3];
+  node [fontname="Helvetica", fontsize=10, shape=box, style="rounded,filled", margin="0.2,0.12"];
+  edge [fontname="Helvetica", fontsize=9, color="#555555"];
+
+  START [label="terraform init\n(S3 backend: per-account bucket + key,\nnative S3-conditional-write lock)", shape=ellipse, fillcolor="#eaeded"];
+
+  subgraph cluster_phase1 {
+    label="Phase 1: terraform apply -target=module.networking -target=module.eks\n(kubernetes/helm/kubectl providers not usable yet -- no live cluster for them to point at)";
+    style="rounded"; color="#2e86c1"; fontcolor="#2e86c1";
+    NET [label="module.networking\nVPC, public/private subnets,\nNAT gateway, S3+DynamoDB\ngateway VPC endpoints", fillcolor="#d6eaf8"];
+    EKS [label="module.eks\nEKS cluster, OIDC provider,\nFargate profiles (system+apps)", fillcolor="#d6eaf8"];
+    NET -> EKS;
+  }
+
+  subgraph cluster_phase2 {
+    label="Phase 2: terraform apply (full, untargeted)\nkubernetes/helm/kubectl providers now resolve against the live cluster from phase 1";
+    style="rounded"; color="#e67e22"; fontcolor="#e67e22";
+
+    subgraph cluster_aws_native {
+      label="AWS-native resources (aws_* provider)"; style="rounded"; color="#aaaaaa";
+      STORAGE [label="module.storage\nS3 data lake + model registry,\nGlue Catalog DB, DynamoDB", fillcolor="#f5eef8"];
+      ECRMOD [label="module.ecr\n3 repos: spark-jobs,\napi-service, console", fillcolor="#f5eef8"];
+      IRSA [label="module.irsa\nIAM roles per service account\n(api-service, spark-jobs)", fillcolor="#f5eef8"];
+      MSG [label="module.messaging\nSNS -> SQS (+DLQ) -> Lambda\n+ CloudWatch alarm", fillcolor="#f5eef8"];
+      OBS [label="module.observability\nLog groups, dashboard,\nbudget + error-rate alarms", fillcolor="#f5eef8"];
+      DB [label="module.database\nRDS Postgres\n(Airflow metadata backend)", fillcolor="#f5eef8"];
+    }
+
+    subgraph cluster_helm {
+      label="module.k8s-addons -- Helm releases launched BY Terraform's own helm provider\n(one terraform apply, not a separate manual `helm install` step)"; style="rounded"; color="#27ae60";
+      ALB [label="helm_release\naws-load-balancer-controller", fillcolor="#a9dfbf"];
+      KARP [label="helm_release\nkarpenter\n+ EC2NodeClass + 2 NodePools\n(on-demand drivers / spot executors)", fillcolor="#a9dfbf"];
+      SPARKOP [label="helm_release\nspark-operator\n(SparkApplication /\nScheduledSparkApplication CRDs)", fillcolor="#a9dfbf"];
+      AIRFLOW [label="helm_release\nairflow\n(git-sync sidecar pulls\nairflow/dags/ from this repo)", fillcolor="#a9dfbf"];
+    }
+
+    subgraph cluster_workloads {
+      label="module.workloads -- plain kubernetes provider\n(kubectl-equivalent, NOT Helm)"; style="rounded"; color="#8e44ad";
+      WORK [label="api-service + console +\nspark-history Deployments,\nSecrets, ServiceAccounts,\nALB Ingress", fillcolor="#e8daef"];
+    }
+
+    IRSA -> WORK [style=dotted, label="IAM roles bound to\nk8s ServiceAccounts"];
+    DB -> AIRFLOW [style=dotted, label="metadata DB\nsecret"];
+    KARP -> WORK [style=dashed, label="depends_on\n(module.workloads waits\nfor module.k8s_addons)"];
+  }
+
+  START -> NET;
+  EKS -> STORAGE; EKS -> ECRMOD; EKS -> IRSA; EKS -> MSG; EKS -> OBS; EKS -> DB;
+  EKS -> ALB [label="cluster endpoint + OIDC\nnow live"];
+  EKS -> KARP; EKS -> SPARKOP; EKS -> AIRFLOW;
+
+  NOTE [label="Real limitation this caught: on a blank account, kubernetes_manifest/kubectl_manifest\nresources need a LIVE cluster to validate schema even during `terraform plan` --\na well-documented Terraform/EKS chicken-and-egg, not a bug in this config.\nFound running `terraform plan` against the real account, not just `terraform validate`.", shape=note, fillcolor="#fef9e7", fontsize=9];
+}

@@ -1,0 +1,80 @@
+digraph CPDPModel {
+  rankdir=LR;
+  graph [fontname="Helvetica", fontsize=11, bgcolor="white", pad=0.35, nodesep=0.25, ranksep=0.55];
+  node [fontname="Helvetica", fontsize=10, shape=box, style="rounded,filled", margin="0.18,0.1"];
+  edge [fontname="Helvetica", fontsize=8.5, color="#555555"];
+
+  subgraph cluster_cp {
+    label="CONTROL PLANE -- Localytics-owned, centralized, multi-tenant\n(no raw customer data ever lands here)";
+    style="rounded"; color="#8e44ad"; fontcolor="#8e44ad"; fontsize=12;
+
+    CODE [label="This repo: src/, docker/\nDAG logic + training logic +\nconsole code, version-controlled", fillcolor="#e8daef"];
+    CICD [label="CI/CD: build + version\nthe 3 images\n(spark-jobs, api-service, console)", fillcolor="#e8daef"];
+    CATALOG [label="Model/version catalog\n(METADATA only: which DAG/image\nversion each customer runs,\naggregate quality metrics --\nnever raw customer data or\nmodel weights)", fillcolor="#e8daef"];
+    ROLLUP [label="Fleet-wide observability rollup\n(cross-account CloudWatch export --\nfor Localytics SRE/support,\nnot per-customer raw logs)", fillcolor="#e8daef"];
+
+    CODE -> CICD;
+  }
+
+  subgraph cluster_dp {
+    label="DATA PLANE -- one per Localytics customer (CX), lives in THAT customer's own AWS account/VPC\nThis project's sandbox account (784004375291) stands in for ONE customer's data plane.";
+    style="rounded"; color="#2e86c1"; fontcolor="#2e86c1"; fontsize=12;
+
+    subgraph cluster_net {
+      label="Networking"; style="rounded"; color="#aaaaaa";
+      VPC [label="VPC, public/private subnets,\nNAT gateway, S3+DynamoDB\ngateway VPC endpoints", fillcolor="#d6eaf8"];
+      ALB [label="ALB + Ingress\n(console, API, Airflow UI,\nSpark History Server)", fillcolor="#d6eaf8"];
+    }
+
+    subgraph cluster_compute {
+      label="Compute"; style="rounded"; color="#aaaaaa";
+      EKS [label="EKS cluster", fillcolor="#bdc3c7"];
+      FARGATE [label="Fargate profile\n(steady lightweight services:\napi-service, console, Spark\nHistory Server, Airflow)", fillcolor="#bdc3c7"];
+      KARP [label="Karpenter NodePools\non-demand (Spark drivers) /\nspot (Spark executors)", fillcolor="#bdc3c7"];
+      AIRFLOW_RT [label="Airflow scheduler + webserver\n(git-sync PULLS DAG code from CP,\nbut the scheduler ITSELF runs here)", fillcolor="#f1c40f"];
+      SPARKOP [label="Spark Operator +\nSparkApplication CRs\n(Silver/Gold/Compaction/Analytics)", fillcolor="#f1c40f"];
+      RDS [label="RDS Postgres\n(Airflow metadata backend --\nthis customer's task history)", shape=cylinder, fillcolor="#f1c40f"];
+      EKS -> FARGATE; EKS -> KARP;
+      FARGATE -> AIRFLOW_RT; KARP -> SPARKOP;
+      RDS -> AIRFLOW_RT [style=dotted];
+    }
+
+    subgraph cluster_storage {
+      label="Storage -- this customer's data, never leaves this account"; style="rounded"; color="#aaaaaa";
+      S3DL [label="S3: data lake bucket\n(Bronze/Silver/Gold Iceberg)", shape=cylinder, fillcolor="#cd7f32", fontcolor="white"];
+      S3MR [label="S3: model registry bucket\n(trained weights for THIS\ncustomer's model)", shape=cylinder, fillcolor="#cd7f32", fontcolor="white"];
+      GLUE [label="Glue Data Catalog", fillcolor="#f5eef8"];
+      ATHENA [label="Athena\n(ad-hoc query, no dedicated\nresource -- IAM + results prefix)", fillcolor="#f5eef8"];
+      DYNAMO [label="DynamoDB\ncustomer_scores\n(real-time serving)", shape=cylinder, fillcolor="#2e86c1", fontcolor="white"];
+      ECR [label="ECR: 3 repos\n(images PUSHED here from CP's\nCI/CD, RUN here)", fillcolor="#f5eef8"];
+      S3DL -> GLUE [style=dotted]; GLUE -> ATHENA;
+    }
+
+    subgraph cluster_msg {
+      label="Event-driven trigger chain"; style="rounded"; color="#aaaaaa";
+      SNS [label="SNS: bronze-data-arrived", fillcolor="#eafaf1"];
+      SQS [label="SQS queue\n+ DLQ (maxReceiveCount=3)", fillcolor="#eafaf1"];
+      LAMBDA [label="Lambda: trigger_pipeline", fillcolor="#eafaf1"];
+      SNS -> SQS -> LAMBDA -> AIRFLOW_RT [label="trigger DAG run"];
+    }
+
+    subgraph cluster_obs {
+      label="Observability -- this customer's own ops visibility"; style="rounded"; color="#aaaaaa";
+      CW [label="CloudWatch: Logs, custom EMF\nmetrics (ChurnService ns),\ndashboard, alarms\n(DLQ-not-empty, API error-rate)", fillcolor="#fef9e7"];
+    }
+
+    subgraph cluster_iam {
+      label="IAM"; style="rounded"; color="#aaaaaa";
+      IRSA [label="IRSA roles\n(api-service, spark-jobs --\nleast-privilege per workload)", fillcolor="#fdedec"];
+    }
+  }
+
+  CICD -> ECR [label="publish versioned\nimages", color="#8e44ad", style="bold"];
+  CODE -> AIRFLOW_RT [label="git-sync pulls DAG\ndefinitions (pinned tag,\nnot `main` directly)", color="#8e44ad", style="bold"];
+  S3MR -> CATALOG [label="version + aggregate metric\nonly -- never the weights\nthemselves", color="#8e44ad", style="bold,dashed"];
+  CW -> ROLLUP [label="fleet-wide export\n(no raw customer data)", color="#8e44ad", style="bold,dashed"];
+
+  IRSA -> S3DL [style=dotted]; IRSA -> S3MR [style=dotted]; IRSA -> DYNAMO [style=dotted]; IRSA -> GLUE [style=dotted];
+  SPARKOP -> S3DL; SPARKOP -> DYNAMO;
+  ALB -> AIRFLOW_RT [style=dotted]; ALB -> FARGATE [style=dotted];
+}

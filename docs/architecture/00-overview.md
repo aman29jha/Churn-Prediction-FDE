@@ -22,6 +22,7 @@ Compaction runs as a `ScheduledSparkApplication` (the Spark Operator's own nativ
 | [06-reviewer-console.md](06-reviewer-console.md) | Streamlit console, Basic Auth, live lookup, evidence capture |
 | [07-analytics.md](07-analytics.md) | Business KPI trends, RFM segment migration, cohort retention — separate daily batch pipeline |
 | [08-infrastructure.md](08-infrastructure.md) | Terraform implementation: module structure, state management, two-phase apply, cost controls, IRSA |
+| [09-cp-dp-model.md](09-cp-dp-model.md) | Hypothetical: Control Plane (Localytics) / Data Plane (per customer) split if this were productized across multiple customers |
 | [../modeling.md](../modeling.md) | Model choice (XGBoost), training approach, synthetic data generation assumptions |
 | [../evaluation.md](../evaluation.md) | Metrics, threshold selection, evaluation protocol |
 
